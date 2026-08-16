@@ -1,3 +1,3 @@
 
-# A Helper App For Make Orders FASTER
+# A Helper App For Making Orders FASTER
 
