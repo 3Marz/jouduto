@@ -1,4 +1,6 @@
 
+from typing import cast
+
 from database import DatabaseManager
 import constants
 import flet as ft
@@ -9,10 +11,40 @@ class TabedPage:
         self.title = title
         self.content = content
 
+@ft.control
+class ImportPage(ft.Container):
+    def __init__(self):
+        super().__init__()
+        self.expand = True
+
+        self.files: None | list[ft.FilePickerFile] = None 
+
+        self.render()
+    
+    def render(self):
+        controls = cast(list[ft.Control], [ 
+            ft.Text("Import sample data"),
+            ft.Button("Pick files", on_click=self.handle_pick_files),
+            ft.Text(self.files[0].path) if self.files else ft.Text("No files selected"),
+        ] )
+
+        self.content = ft.Column(controls=controls)
+
+    async def handle_pick_files(self, e: ft.Event[ft.Button]):
+        files = await ft.FilePicker().pick_files(
+            with_data=True,
+            allow_multiple=False,
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["xls", "xlsx"],
+        )
+        self.files = files
+        self.render()
+
+
 pages: list[TabedPage] = [
     TabedPage(title="Home", content=ft.Text("Home")),
     TabedPage(title="Items", content=ft.Text("Items")),
-    TabedPage(title="Extras", content=ft.Text("Extras"))
+    TabedPage(title="Import", content=ImportPage())
 ]
 
 def initialize_database():
