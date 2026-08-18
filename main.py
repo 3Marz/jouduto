@@ -40,11 +40,31 @@ class ImportPage(ft.Container):
         self.files = files
         self.render()
 
+@ft.control
+class DistributorsPage(ft.Container):
+    def __init__(self):
+        super().__init__()
+        self.expand = True
+
+        self.viewContainer = ft.Container(expand=True, content=ft.Text("View"))
+        self.createContainer = ft.Container(expand=True, content=ft.Text("Create"))
+
+        self.content = ft.Row(
+            controls=[
+                self.viewContainer,
+                ft.VerticalDivider(),
+                self.createContainer
+            ]
+        )
+
+
+
 
 pages: list[TabedPage] = [
     TabedPage(title="Home", content=ft.Text("Home")),
     TabedPage(title="Items", content=ft.Text("Items")),
-    TabedPage(title="Import", content=ImportPage())
+    TabedPage(title="Import", content=ImportPage()),
+    TabedPage(title="Distributors", content=DistributorsPage()),
 ]
 
 def initialize_database():
@@ -61,8 +81,8 @@ def main(page: ft.Page):
             expand=True,
             content=ft.Tabs(
                 expand=True,
-                length=3,
-                selected_index=1,
+                length=4,
+                selected_index=2,
                 content=ft.Column(
                     expand=True,
                     controls=[

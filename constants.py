@@ -34,8 +34,9 @@ CREATE TABLE IF NOT EXISTS item_distributors (
 CREATE TABLE IF NOT EXISTS inventory (
     warehouse_id INTEGER NOT NULL,
     item_id INTEGER NOT NULL,
-    quantity_available INTEGER NOT NULL,
-    sold_quantity INTEGER NOT NULL,
+    quantity_available INTEGER DEFAULT 0,
+    quantity_ordered INTEGER DEFAULT 0,
+    quantity_sold INTEGER DEFAULT 0,
     last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (warehouse_id, item_id),
     FOREIGN KEY (item_id) REFERENCES items(item_id),
