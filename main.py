@@ -90,33 +90,98 @@ class ItemsImagesViewPage(ft.Container):
         super().__init__()
         self.expand = True
 
-        self.itemsView = ft.SafeArea(
+        self.displayed_items = list(items)
+        self.selected_item_ids: set[int] = set()
+        self.focused_item_id: int | None = self.displayed_items[0]["id"] if self.displayed_items else None
+
+        self.table: ft.DataTable = ft.DataTable(
             expand=True,
-            content=ft.DataTable(
-                expand=True,
-                columns=[
-                    ft.DataColumn(label=ft.Text("Code")),
-                    ft.DataColumn(label=ft.Text("Name")),
-                    ft.DataColumn(label=ft.Text("Unit Price"), numeric=True),
-                ],
-                rows=[
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.TextField(read_only=True, value=item["code"], margin=3, width=200)),
-                        ft.DataCell(ft.Text(item["name"])),
-                        ft.DataCell(ft.Text(item["unit_price"])),
-                    ]) for item in items
-                ]
-            )
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=10,
+            vertical_lines=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+            horizontal_lines=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+            sort_column_index=0,
+            sort_ascending=True,
+            heading_row_color=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            heading_row_height=100,
+            data_row_color={
+                ft.ControlState.HOVERED: ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+                ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
+            },
+            show_checkbox_column=True,
+            divider_thickness=1,
+            column_spacing=200,
+            columns=[
+                ft.DataColumn(label=ft.Text("Code")),
+                ft.DataColumn(label=ft.Text("Name")),
+                ft.DataColumn(label=ft.Text("Unit Price"), numeric=True),
+            ],
+            rows=self.build_rows()
         )
+
         self.imageView = ft.Container(expand=True, content=ft.Text("images"))
 
         self.content = ft.Row(
             controls=[
-                self.itemsView,
+                ft.SafeArea(
+                    expand=True,
+                    content=self.table
+                ),
                 ft.VerticalDivider(),
                 self.imageView
             ]
         )
+
+    def handle_select_item(self, e: ft.Event[ft.DataRow]):
+        row = e.control
+        item_id = row.data
+        is_selected = e.data
+        self.focused_item_id = item_id
+
+        if is_selected:
+            self.selected_item_ids.add(item_id)
+        else:
+            self.selected_item_ids.discard(item_id)
+
+        self.refresh_table_rows()
+
+    def refresh_table_rows(self):
+        self.table.rows = self.build_rows()
+        self.table.update()
+
+    def handle_keyboard(self, e: ft.KeyboardEvent) -> None:
+
+        key = e.key.lower()
+        if key not in {"arrow up", "arrow down"}:
+            return
+
+        focused_index = next(
+            (
+                index
+                for index, item in enumerate(self.displayed_items)
+                if item["id"] == self.focused_item_id
+            ),
+            0,
+        )
+        direction = -1 if key == "arrow up" else 1
+        next_index = max(0, min(len(self.displayed_items) - 1, focused_index + direction))
+        self.focused_item_id = self.displayed_items[next_index]["id"]
+        self.refresh_table_rows()
+
+    def build_rows(self):
+        return [ 
+            ft.DataRow(
+                selected=item["id"] in self.selected_item_ids,
+                data=item["id"],
+                on_select_change=self.handle_select_item,
+                cells=[
+                    ft.DataCell(ft.Text(item["code"])),
+                    ft.DataCell(ft.Text(item["name"])),
+                    ft.DataCell(ft.Text(item["unit_price"])),
+            ]) 
+            for item in self.displayed_items
+        ]
 
 
 pages: list[TabedPage] = [
