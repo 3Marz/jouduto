@@ -57,7 +57,66 @@ class DistributorsPage(ft.Container):
             ]
         )
 
+items = [
+    {
+        "id": 1,
+        "code": "item-1",
+        "name": "Item 1",
+        "unit_price": 100
+    },
+    {
+        "id": 2,
+        "code": "item-2",
+        "name": "Item 2",
+        "unit_price": 200
+    },
+    {
+        "id": 3,
+        "code": "item-3",
+        "name": "Item 3",
+        "unit_price": 2100
+    },
+    {
+        "id": 4,
+        "code": "item-4",
+        "name": "Item 4",
+        "unit_price": 300
+    }
+]
 
+@ft.control
+class ItemsImagesViewPage(ft.Container):
+    def __init__(self):
+        super().__init__()
+        self.expand = True
+
+        self.itemsView = ft.SafeArea(
+            expand=True,
+            content=ft.DataTable(
+                expand=True,
+                columns=[
+                    ft.DataColumn(label=ft.Text("Code")),
+                    ft.DataColumn(label=ft.Text("Name")),
+                    ft.DataColumn(label=ft.Text("Unit Price"), numeric=True),
+                ],
+                rows=[
+                    ft.DataRow(cells=[
+                        ft.DataCell(ft.TextField(read_only=True, value=item["code"], margin=3, width=200)),
+                        ft.DataCell(ft.Text(item["name"])),
+                        ft.DataCell(ft.Text(item["unit_price"])),
+                    ]) for item in items
+                ]
+            )
+        )
+        self.imageView = ft.Container(expand=True, content=ft.Text("images"))
+
+        self.content = ft.Row(
+            controls=[
+                self.itemsView,
+                ft.VerticalDivider(),
+                self.imageView
+            ]
+        )
 
 
 pages: list[TabedPage] = [
@@ -65,6 +124,7 @@ pages: list[TabedPage] = [
     TabedPage(title="Items", content=ft.Text("Items")),
     TabedPage(title="Import", content=ImportPage()),
     TabedPage(title="Distributors", content=DistributorsPage()),
+    TabedPage(title="Item Images", content=ItemsImagesViewPage()),
 ]
 
 def initialize_database():
@@ -81,7 +141,7 @@ def main(page: ft.Page):
             expand=True,
             content=ft.Tabs(
                 expand=True,
-                length=4,
+                length=len(pages),
                 selected_index=2,
                 content=ft.Column(
                     expand=True,
