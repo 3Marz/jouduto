@@ -4,7 +4,7 @@ from typing import cast
 from database import DatabaseManager
 import constants
 import flet as ft
-
+import GoogleImageScraper
 
 class TabedPage:
     def __init__(self, title: str, content: ft.Control):
@@ -60,26 +60,26 @@ class DistributorsPage(ft.Container):
 items = [
     {
         "id": 1,
-        "code": "item-1",
-        "name": "Item 1",
+        "code": "9X8511",
+        "name": "SOLENOID",
         "unit_price": 100
     },
     {
         "id": 2,
-        "code": "item-2",
-        "name": "Item 2",
+        "code": "3E7577",
+        "name": "ALTERNATOR",
         "unit_price": 200
     },
     {
         "id": 3,
-        "code": "item-3",
-        "name": "Item 3",
+        "code": "1R0739",
+        "name": "FILTER",
         "unit_price": 2100
     },
     {
         "id": 4,
-        "code": "item-4",
-        "name": "Item 4",
+        "code": "20Y-30-11160",
+        "name": "CAP",
         "unit_price": 300
     }
 ]
@@ -94,24 +94,31 @@ class ItemsImagesViewPage(ft.Container):
         self.selected_item_ids: set[int] = set()
         self.focused_item_id: int | None = self.displayed_items[0]["id"] if self.displayed_items else None
 
+        self.prev_button = ft.Button(
+            content="Previous",
+            icon=ft.Icons.ARROW_BACK,
+            data=-1,
+            on_click=self.handle_prev_select,
+            tooltip="Select previous item",
+        )
+        self.next_button = ft.Button(
+            content="Next",
+            icon=ft.Icons.ARROW_FORWARD,
+            data=1,
+            on_click=self.handle_next_select,
+            tooltip="Select next item",
+        )
         self.table: ft.DataTable = ft.DataTable(
             expand=True,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-            border_radius=10,
-            vertical_lines=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
-            horizontal_lines=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
-            sort_column_index=0,
-            sort_ascending=True,
-            heading_row_color=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-            heading_row_height=100,
+            heading_row_color=ft.Colors.with_opacity(1, ft.Colors.SURFACE_CONTAINER_HIGH),
+            border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER_HIGHEST),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
             data_row_color={
                 ft.ControlState.HOVERED: ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
                 ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
             },
             show_checkbox_column=True,
             divider_thickness=1,
-            column_spacing=200,
             columns=[
                 ft.DataColumn(label=ft.Text("Code")),
                 ft.DataColumn(label=ft.Text("Name")),
@@ -126,7 +133,23 @@ class ItemsImagesViewPage(ft.Container):
             controls=[
                 ft.SafeArea(
                     expand=True,
-                    content=self.table
+                    content=ft.Column(
+                        expand=True,
+                        controls=[
+                            ft.Row(
+                                controls=[
+                                    self.prev_button,
+                                    self.next_button,
+                                    ft.Button(
+                                        content="Un/Select",
+                                        icon=ft.Icons.CHECK,
+                                        on_click=self.handle_select_item_button,
+                                    )
+                                ]
+                            ),
+                            self.table
+                        ]
+                    )
                 ),
                 ft.VerticalDivider(),
                 self.imageView
@@ -146,15 +169,27 @@ class ItemsImagesViewPage(ft.Container):
 
         self.refresh_table_rows()
 
+    def handle_select_item_button(self, e: ft.Event[ft.Button]):
+        is_checked = self.focused_item_id in self.selected_item_ids
+
+        if is_checked:
+            self.selected_item_ids.discard(self.focused_item_id)
+        else:
+            self.selected_item_ids.add(self.focused_item_id) if self.focused_item_id else None
+
+        self.refresh_table_rows()
+
     def refresh_table_rows(self):
         self.table.rows = self.build_rows()
         self.table.update()
 
-    def handle_keyboard(self, e: ft.KeyboardEvent) -> None:
+    def refresh_image_view(self):
+        urls = GoogleImageScraper.urls(query="Cats")
+        print(urls)
+        # self.imageView.content = ft.Image(
+        # )
 
-        key = e.key.lower()
-        if key not in {"arrow up", "arrow down"}:
-            return
+    def handle_next_select(self, e: ft.Event[ft.Button]) -> None:
 
         focused_index = next(
             (
@@ -164,9 +199,26 @@ class ItemsImagesViewPage(ft.Container):
             ),
             0,
         )
-        direction = -1 if key == "arrow up" else 1
+        direction = 1
         next_index = max(0, min(len(self.displayed_items) - 1, focused_index + direction))
         self.focused_item_id = self.displayed_items[next_index]["id"]
+        self.refresh_image_view()
+        self.refresh_table_rows()
+
+    def handle_prev_select(self, e: ft.Event[ft.Button]) -> None:
+
+        focused_index = next(
+            (
+                index
+                for index, item in enumerate(self.displayed_items)
+                if item["id"] == self.focused_item_id
+            ),
+            0,
+        )
+        direction = -1
+        next_index = max(0, min(len(self.displayed_items) - 1, focused_index + direction))
+        self.focused_item_id = self.displayed_items[next_index]["id"]
+        self.refresh_image_view()
         self.refresh_table_rows()
 
     def build_rows(self):
@@ -175,6 +227,16 @@ class ItemsImagesViewPage(ft.Container):
                 selected=item["id"] in self.selected_item_ids,
                 data=item["id"],
                 on_select_change=self.handle_select_item,
+                color=(
+                    {
+                        ft.ControlState.DEFAULT: ft.Colors.with_opacity(0.20, ft.Colors.PRIMARY),
+                        ft.ControlState.SELECTED: ft.Colors.with_opacity(0.30, ft.Colors.PRIMARY),
+                    } 
+                    if item["id"] == self.focused_item_id 
+                    else {
+                        ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
+                    } 
+                ),
                 cells=[
                     ft.DataCell(ft.Text(item["code"])),
                     ft.DataCell(ft.Text(item["name"])),
