@@ -3,7 +3,7 @@ DB_PATH = "data/jouduto.db"
 INITIAL_DB_SCHEME = """
 CREATE TABLE IF NOT EXISTS distributors (
     distributor_id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -41,13 +41,16 @@ class ImportPage(ft.Container):
         self.files = files
         self.render()
 
-pages: list[TabedPage] = [
-    TabedPage(title="Home", content=ft.Text("Home")),
-    TabedPage(title="Items", content=ft.Text("Items")),
-    TabedPage(title="Import", content=ImportPage()),
-    TabedPage(title="Distributors", content=DistributorsPage()),
-    TabedPage(title="Item Images", content=ItemsImagesViewPage()),
-]
+pages: list[TabedPage] = []
+
+def initialize_pages():
+     return [
+        TabedPage(title="Home", content=ft.Text("Home")),
+        TabedPage(title="Items", content=ft.Text("Items")),
+        TabedPage(title="Import", content=ImportPage()),
+        TabedPage(title="Distributors", content=DistributorsPage()),
+        TabedPage(title="Item Images", content=ItemsImagesViewPage()),
+    ]
 
 def initialize_database():
     with DatabaseManager(constants.DB_PATH) as db:
@@ -55,6 +58,10 @@ def initialize_database():
         print("Database initialized")
 
 def main(page: ft.Page):
+
+    initialize_database()
+    pages = initialize_pages()
+
     page.title = "Jouduto"
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
@@ -64,7 +71,7 @@ def main(page: ft.Page):
             content=ft.Tabs(
                 expand=True,
                 length=len(pages),
-                selected_index=2,
+                selected_index=3,
                 content=ft.Column(
                     expand=True,
                     controls=[
