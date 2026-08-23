@@ -4,7 +4,7 @@ from typing import cast
 from database import DatabaseManager
 import constants
 import flet as ft
-from pages.item_images import ItemsImagesViewPage
+from pages.items import ItemsPage
 from pages.distributors import DistributorsPage
 
 class TabedPage:
@@ -46,10 +46,9 @@ pages: list[TabedPage] = []
 def initialize_pages():
      return [
         TabedPage(title="Home", content=ft.Text("Home")),
-        TabedPage(title="Items", content=ft.Text("Items")),
-        TabedPage(title="Import", content=ImportPage()),
+        TabedPage(title="Items", content=ItemsPage()),
         TabedPage(title="Distributors", content=DistributorsPage()),
-        TabedPage(title="Item Images", content=ItemsImagesViewPage()),
+        TabedPage(title="Import", content=ImportPage()),
     ]
 
 def initialize_database():
@@ -71,7 +70,7 @@ def main(page: ft.Page):
             content=ft.Tabs(
                 expand=True,
                 length=len(pages),
-                selected_index=3,
+                selected_index=1,
                 content=ft.Column(
                     expand=True,
                     controls=[

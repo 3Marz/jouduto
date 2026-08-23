@@ -1,4 +1,6 @@
+
 import flet as ft
+import flet_datatable2 as fdt
 
 items = [
     {
@@ -28,12 +30,13 @@ items = [
 ]
 
 @ft.control
-class ItemsImagesViewPage(ft.Container):
+class ItemsPage(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
 
         self.displayed_items = list(items)
+
         self.selected_item_ids: set[int] = set()
         self.focused_item_id: int | None = self.displayed_items[0]["id"] if self.displayed_items else None
 
@@ -51,8 +54,9 @@ class ItemsImagesViewPage(ft.Container):
             on_click=self.handle_next_select,
             tooltip="Select next item",
         )
-        self.table: ft.DataTable = ft.DataTable(
+        self.table: fdt.DataTable2 = fdt.DataTable2(
             expand=True,
+            on_select_all=self.handle_select_all,
             heading_row_color=ft.Colors.with_opacity(1, ft.Colors.SURFACE_CONTAINER_HIGH),
             border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER_HIGHEST),
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
@@ -62,12 +66,8 @@ class ItemsImagesViewPage(ft.Container):
             },
             show_checkbox_column=True,
             divider_thickness=1,
-            columns=[
-                ft.DataColumn(label=ft.Text("Code")),
-                ft.DataColumn(label=ft.Text("Name")),
-                ft.DataColumn(label=ft.Text("Unit Price"), numeric=True),
-            ],
-            rows=self.build_rows()
+            columns = self.build_columns(), 
+            rows = self.build_rows()
         )
 
         self.imageView = ft.Container(expand=True, content=ft.Text("images"))
@@ -94,10 +94,28 @@ class ItemsImagesViewPage(ft.Container):
                         ]
                     )
                 ),
-                ft.VerticalDivider(),
-                self.imageView
+                # ft.VerticalDivider(),
+                # self.imageView
             ]
         )
+
+    def build_columns(self) -> list[fdt.DataColumn2]:
+        return [
+            fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
+        ]
+
+    def handle_sort(self, e: ft.DataColumnSortEvent):
+        sorters = [
+            lambda i: i["code"],
+            lambda i: i["name"],
+            lambda i: i["unit_price"],
+        ]
+        self.displayed_items.sort(key=sorters[e.column_index], reverse = not e.ascending)
+        self.table.sort_column_index = e.column_index
+        self.table.sort_ascending = e.ascending
+        self.refresh_table_rows()
 
     def handle_select_item(self, e: ft.Event[ft.DataRow]):
         row = e.control
@@ -112,6 +130,14 @@ class ItemsImagesViewPage(ft.Container):
 
         self.refresh_table_rows()
 
+    def handle_select_all(self, e: ft.Event[ft.DataTable]):
+        if e.data:
+            self.selected_item_ids.update(int(item["id"]) for item in self.displayed_items)
+        else:
+            self.selected_item_ids.clear()
+
+        self.refresh_table_rows()
+
     def handle_select_item_button(self, e: ft.Event[ft.Button]):
         is_checked = self.focused_item_id in self.selected_item_ids
 
@@ -123,7 +149,7 @@ class ItemsImagesViewPage(ft.Container):
         self.refresh_table_rows()
 
     def refresh_table_rows(self):
-        self.table.rows = self.build_rows()
+        self.table.rows = self.build_rows() 
         self.table.update()
 
     def refresh_image_view(self):
@@ -165,9 +191,9 @@ class ItemsImagesViewPage(ft.Container):
         self.refresh_image_view()
         self.refresh_table_rows()
 
-    def build_rows(self):
+    def build_rows(self) -> list[fdt.DataRow2]:
         return [ 
-            ft.DataRow(
+            fdt.DataRow2(
                 selected=item["id"] in self.selected_item_ids,
                 data=item["id"],
                 on_select_change=self.handle_select_item,
