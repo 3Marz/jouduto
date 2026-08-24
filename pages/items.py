@@ -2,31 +2,13 @@
 import flet as ft
 import flet_datatable2 as fdt
 
-items = [
-    {
-        "id": 1,
-        "code": "9X8511",
-        "name": "SOLENOID",
-        "unit_price": 100
-    },
-    {
-        "id": 2,
-        "code": "3E7577",
-        "name": "ALTERNATOR",
-        "unit_price": 200
-    },
-    {
-        "id": 3,
-        "code": "1R0739",
-        "name": "FILTER",
-        "unit_price": 2100
-    },
-    {
-        "id": 4,
-        "code": "20Y-30-11160",
-        "name": "CAP",
-        "unit_price": 300
-    }
+from datatypes import Item
+
+items: list[Item] = [
+    Item(1, "9X8511", "SOLENOID"),
+    Item(2, "3E7577", "ALTERNATOR"),
+    Item(3, "1R0739", "FILTER"),
+    Item(4, "20Y-30-11160", "CAP"),
 ]
 
 @ft.control
@@ -38,7 +20,7 @@ class ItemsPage(ft.Container):
         self.displayed_items = list(items)
 
         self.selected_item_ids: set[int] = set()
-        self.focused_item_id: int | None = self.displayed_items[0]["id"] if self.displayed_items else None
+        self.focused_item_id: int | None = self.displayed_items[0].id if self.displayed_items else None
 
         self.prev_button = ft.Button(
             content="Previous",
@@ -103,14 +85,14 @@ class ItemsPage(ft.Container):
         return [
             fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
+            # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
 
     def handle_sort(self, e: ft.DataColumnSortEvent):
         sorters = [
-            lambda i: i["code"],
-            lambda i: i["name"],
-            lambda i: i["unit_price"],
+            lambda i: i.code,
+            lambda i: i.name,
+            # lambda i: i["unit_price"],
         ]
         self.displayed_items.sort(key=sorters[e.column_index], reverse = not e.ascending)
         self.table.sort_column_index = e.column_index
@@ -132,7 +114,7 @@ class ItemsPage(ft.Container):
 
     def handle_select_all(self, e: ft.Event[ft.DataTable]):
         if e.data:
-            self.selected_item_ids.update(int(item["id"]) for item in self.displayed_items)
+            self.selected_item_ids.update(int(item.id) for item in self.displayed_items)
         else:
             self.selected_item_ids.clear()
 
@@ -165,13 +147,13 @@ class ItemsPage(ft.Container):
             (
                 index
                 for index, item in enumerate(self.displayed_items)
-                if item["id"] == self.focused_item_id
+                if item.id == self.focused_item_id
             ),
             0,
         )
         direction = 1
         next_index = max(0, min(len(self.displayed_items) - 1, focused_index + direction))
-        self.focused_item_id = self.displayed_items[next_index]["id"]
+        self.focused_item_id = self.displayed_items[next_index].id
         self.refresh_image_view()
         self.refresh_table_rows()
 
@@ -181,36 +163,36 @@ class ItemsPage(ft.Container):
             (
                 index
                 for index, item in enumerate(self.displayed_items)
-                if item["id"] == self.focused_item_id
+                if item.id == self.focused_item_id
             ),
             0,
         )
         direction = -1
         next_index = max(0, min(len(self.displayed_items) - 1, focused_index + direction))
-        self.focused_item_id = self.displayed_items[next_index]["id"]
+        self.focused_item_id = self.displayed_items[next_index].id
         self.refresh_image_view()
         self.refresh_table_rows()
 
     def build_rows(self) -> list[fdt.DataRow2]:
         return [ 
             fdt.DataRow2(
-                selected=item["id"] in self.selected_item_ids,
-                data=item["id"],
+                selected=item.id in self.selected_item_ids,
+                data=item.id,
                 on_select_change=self.handle_select_item,
                 color=(
                     {
                         ft.ControlState.DEFAULT: ft.Colors.with_opacity(0.20, ft.Colors.PRIMARY),
                         ft.ControlState.SELECTED: ft.Colors.with_opacity(0.30, ft.Colors.PRIMARY),
                     } 
-                    if item["id"] == self.focused_item_id 
+                    if item.id == self.focused_item_id 
                     else {
                         ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
                     } 
                 ),
                 cells=[
-                    ft.DataCell(ft.Text(item["code"])),
-                    ft.DataCell(ft.Text(item["name"])),
-                    ft.DataCell(ft.Text(item["unit_price"])),
+                    ft.DataCell(ft.Text(item.code)),
+                    ft.DataCell(ft.Text(item.name)),
+                    # ft.DataCell(ft.Text(item["unit_price"])),
             ]) 
             for item in self.displayed_items
         ]
