@@ -18,9 +18,61 @@ class ItemsPage(ft.Container):
         self.expand = True
 
         self.displayed_items = list(items)
+        self.files: None | list[ft.FilePickerFile] = None
+        self.selected_import_type: str | None = "items"
 
         self.selected_item_ids: set[int] = set()
         self.focused_item_id: int | None = self.displayed_items[0].id if self.displayed_items else None
+
+        self.status_text = ft.Text("No items selected")
+
+        self.import_data_button = ft.Button(
+            content="Import Data",
+            icon=ft.Icons.INVENTORY_2_OUTLINED,
+            on_click=lambda e: self.page.show_dialog(self.import_data_modal)
+        )
+        self.pick_file_button = ft.Button("Pick file", icon=ft.Icons.UPLOAD, on_click=self.handle_pick_files)
+        self.import_data_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Row(controls=[ft.Icon(ft.Icons.INVENTORY_2_OUTLINED), ft.Text("Import Data")]),
+            content=ft.Column(
+                height=200,
+                width=500,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Text("Select File: "),
+                            self.pick_file_button
+                        ]
+                    ),
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Text("Import Type:"),
+                            ft.RadioGroup (
+                                value=self.selected_import_type,
+                                on_change=self.handle_import_type_change,
+                                content=ft.Row(
+                                    controls=[
+                                        ft.Radio(label="Items Data", value="items"),
+                                        ft.Radio(label="Inventory Data", value="inventory"),
+                                    ]
+                                )
+                            )
+                        ]
+                    ),
+                ]
+            ),
+            actions = [
+                ft.Button("Cancel", on_click=lambda e: self.page.pop_dialog()),
+                ft.Button(
+                    "Import", 
+                    bgcolor=ft.Colors.PRIMARY, color=ft.Colors.INVERSE_PRIMARY,
+                    on_click=self.handle_import
+                )
+            ]
+        )
 
         self.prev_button = ft.Button(
             content="Previous",
@@ -63,21 +115,32 @@ class ItemsPage(ft.Container):
                         controls=[
                             ft.Row(
                                 controls=[
-                                    self.prev_button,
-                                    self.next_button,
-                                    ft.Button(
-                                        content="Un/Select",
-                                        icon=ft.Icons.CHECK,
-                                        on_click=self.handle_select_item_button,
-                                    )
+                                    ft.Row(
+                                        expand=True,
+                                        controls=[
+                                            self.prev_button,
+                                            self.next_button,
+                                            ft.Button(
+                                                content="Un/Select",
+                                                icon=ft.Icons.CHECK,
+                                                on_click=self.handle_select_item_button,
+                                            )
+                                        ]
+                                    ),
+                                    ft.Row(
+                                        alignment=ft.MainAxisAlignment.END,
+                                        expand=True,
+                                        controls=[
+                                            self.import_data_button,
+                                        ]
+                                    ),
                                 ]
                             ),
+                            self.status_text,
                             self.table
                         ]
                     )
                 ),
-                # ft.VerticalDivider(),
-                # self.imageView
             ]
         )
 
@@ -196,5 +259,24 @@ class ItemsPage(ft.Container):
             ]) 
             for item in self.displayed_items
         ]
+
+    async def handle_pick_files(self, e: ft.Event[ft.Button]):
+        files = await ft.FilePicker().pick_files(
+            with_data=True,
+            allow_multiple=False,
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["xls", "xlsx"],
+        )
+        self.files = files
+        self.pick_file_button.content = f"Files picked: {files[0].name}" if files else "No files selected"
+        self.pick_file_button.update()
+    def handle_import_type_change(self, e: ft.Event[ft.RadioGroup]):
+        self.selected_import_type = e.control.value
+
+    def handle_import(self, e: ft.Event[ft.Button]):
+        if not self.files:
+            return
+        pass
+
 
 
