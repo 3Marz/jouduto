@@ -25,26 +25,33 @@ class DatabaseManager:
             self.conn.close()
 
     def execute_query(self, query: str, params: Tuple[Any, ...] = ()) -> None:
-        # Executes a command that doesn't return data (CREATE, INSERT, UPDATE, DELETE). #
+
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.execute(query, params)
 
+    def execute_many_query(self, query: str, params: Tuple[Any, ...] = ()) -> None:
+
+        if self.cur is None:
+            raise Exception("Cursor not initialized")
+        self.cur.executemany(query, params)
+
+
     def execute_script(self, script: str) -> None:
-        # Executes a script that doesn't return data (CREATE, INSERT, UPDATE, DELETE). #
+
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.executescript(script)
 
     def fetch_all(self, query: str, params: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
-        # Executes a query and returns all results as a list of dictionaries. #
+
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.execute(query, params)
         return [dict(row) for row in self.cur.fetchall()]
 
     def fetch_one(self, query: str, params: Tuple[Any, ...] = ()) -> Optional[Dict[str, Any]]:
-        # Executes a query and returns the first result row as a dictionary #
+
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.execute(query, params)

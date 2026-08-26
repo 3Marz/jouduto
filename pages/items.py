@@ -1,23 +1,25 @@
 
+import sqlite3
+from typing import Tuple
+
+from database import DatabaseManager
+from constants import DB_PATH
+
 import flet as ft
 import flet_datatable2 as fdt
+import pandas as pd
 
 from datatypes import Item
-
-items: list[Item] = [
-    Item(1, "9X8511", "SOLENOID"),
-    Item(2, "3E7577", "ALTERNATOR"),
-    Item(3, "1R0739", "FILTER"),
-    Item(4, "20Y-30-11160", "CAP"),
-]
 
 @ft.control
 class ItemsPage(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
+        
+        self.get_items_data()
 
-        self.displayed_items = list(items)
+        self.displayed_items = self.get_items_data()
         self.files: None | list[ft.FilePickerFile] = None
         self.selected_import_type: str | None = "items"
 
@@ -260,6 +262,13 @@ class ItemsPage(ft.Container):
             for item in self.displayed_items
         ]
 
+    def get_items_data(self):
+        items: list[Item] = []
+        with DatabaseManager(DB_PATH) as db:
+            db_items = db.fetch_all("SELECT * FROM items")
+            items = [Item(itm["item_id"], itm["code"], itm["name"]) for itm in db_items]
+        return items
+
     async def handle_pick_files(self, e: ft.Event[ft.Button]):
         files = await ft.FilePicker().pick_files(
             with_data=True,
@@ -270,13 +279,33 @@ class ItemsPage(ft.Container):
         self.files = files
         self.pick_file_button.content = f"Files picked: {files[0].name}" if files else "No files selected"
         self.pick_file_button.update()
+
     def handle_import_type_change(self, e: ft.Event[ft.RadioGroup]):
         self.selected_import_type = e.control.value
 
     def handle_import(self, e: ft.Event[ft.Button]):
         if not self.files:
             return
-        pass
+
+        df = pd.read_excel(self.files[0].path)
+
+        if self.selected_import_type == "items":
+
+            for row in df.itertuples():
+                try:
+                    with DatabaseManager(DB_PATH) as db:
+                        db.execute_query("INSERT INTO items (code, name) VALUES (?, ?)", (row[1], row[2]))
+                        print("Items ADDED ", (row[1], row[2]))
+                except sqlite3.Error as err:
+                    print(f"Error : %{err}")
+
+            self.displayed_items = self.get_items_data()
+            self.refresh_table_rows()
+            self.page.pop_dialog()
+
+        else:
+            pass
+
 
 
 
