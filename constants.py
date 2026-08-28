@@ -3,27 +3,27 @@ DB_PATH = "data/jouduto.db"
 INITIAL_DB_SCHEME = """
 CREATE TABLE IF NOT EXISTS distributors (
     distributor_id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
+    distributor_name TEXT NOT NULL UNIQUE,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS warehouses (
     warehouse_id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
+    warehouse_name TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS items (
     item_id INTEGER PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
+    item_code TEXT NOT NULL UNIQUE,
+    item_name TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS item_distributors (
     item_id INTEGER NOT NULL,
     distributor_id INTEGER NOT NULL,
-    is_primary INTEGER,
+    is_primary BOOLEAN DEFAULT FALSE,
     cost_price NUMERIC,
     PRIMARY KEY (item_id, distributor_id),
     FOREIGN KEY (item_id) REFERENCES items(item_id),

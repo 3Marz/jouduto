@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 class Distributor:
     id: int
     name: str
+    is_primary: bool
 
 @dataclass 
 class Inventory:

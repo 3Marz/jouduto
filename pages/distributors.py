@@ -75,7 +75,7 @@ class DistributorsPage(ft.Container):
 
         try:
             with DatabaseManager(DB_PATH) as db:
-                db.execute_query("INSERT INTO distributors ( name ) VALUES ( ? )", ( self.create_distributor_name, ) )
+                db.execute_query("INSERT INTO distributors ( distributor_name ) VALUES ( ? )", ( self.create_distributor_name, ) )
 
                 self.status.value = f"Created {self.create_distributor_name}"
                 self.status.color = ft.Colors.GREEN
@@ -131,7 +131,7 @@ class DistributorsPage(ft.Container):
             ft.DataRow(
                 cells=[
                     ft.DataCell(ft.Text(distro["distributor_id"])),
-                    ft.DataCell(ft.Text(distro["name"])),
+                    ft.DataCell(ft.Text(distro["distributor_name"])),
                     ft.DataCell(ft.Text(distro["created_at"])),
                     ft.DataCell(
                         ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, i=distro["distributor_id"]: self.about_to_delete(i))

@@ -9,7 +9,7 @@ import flet as ft
 import flet_datatable2 as fdt
 import pandas as pd
 
-from datatypes import Item
+from datatypes import Item, Distributor
 
 @ft.control
 class ItemsPage(ft.Container):
@@ -17,8 +17,6 @@ class ItemsPage(ft.Container):
         super().__init__()
         self.expand = True
         
-        self.get_items_data()
-
         self.displayed_items = self.get_items_data()
         self.files: None | list[ft.FilePickerFile] = None
         self.selected_import_type: str | None = "items"
@@ -133,6 +131,11 @@ class ItemsPage(ft.Container):
                                         alignment=ft.MainAxisAlignment.END,
                                         expand=True,
                                         controls=[
+                                            ft.Button(
+                                                "Delete All",
+                                                icon=ft.Icons.DELETE,
+                                                on_click=self.delete_all_items
+                                            ),
                                             self.import_data_button,
                                         ]
                                     ),
@@ -150,6 +153,7 @@ class ItemsPage(ft.Container):
         return [
             fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Distributors"), on_sort=self.handle_sort),
             # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
 
@@ -157,6 +161,7 @@ class ItemsPage(ft.Container):
         sorters = [
             lambda i: i.code,
             lambda i: i.name,
+            lambda i: i.distributors[0].name,
             # lambda i: i["unit_price"],
         ]
         self.displayed_items.sort(key=sorters[e.column_index], reverse = not e.ascending)
@@ -257,6 +262,12 @@ class ItemsPage(ft.Container):
                 cells=[
                     ft.DataCell(ft.Text(item.code)),
                     ft.DataCell(ft.Text(item.name)),
+                    ft.DataCell(ft.Row(
+                        controls=[
+                            ft.Text(dist.name, opacity=1 if dist.is_primary else 0.6)
+                            for dist in item.distributors
+                        ]
+                    )),
                     # ft.DataCell(ft.Text(item["unit_price"])),
             ]) 
             for item in self.displayed_items
@@ -266,8 +277,25 @@ class ItemsPage(ft.Container):
         items: list[Item] = []
         with DatabaseManager(DB_PATH) as db:
             db_items = db.fetch_all("SELECT * FROM items")
-            items = [Item(itm["item_id"], itm["code"], itm["name"]) for itm in db_items]
+            items = [Item(itm["item_id"], itm["item_code"], itm["item_name"]) for itm in db_items]
+            for i in range(len(items)):
+                distros = db.fetch_all("""
+                    SELECT d.distributor_id, d.distributor_name, itds.is_primary
+                    FROM distributors d
+                    JOIN item_distributors itds ON d.distributor_id = itds.distributor_id
+                    JOIN items it ON itds.item_id = it.item_id
+                    WHERE it.item_id = ?
+                """, (items[i].id,))
+                items[i].distributors = [Distributor(d["distributor_id"], d["distributor_name"], d["is_primary"]) for d in distros]
+        print(items)
         return items
+
+    def delete_all_items(self):
+        with DatabaseManager(DB_PATH) as db:
+            db.execute_query("DELETE FROM items")
+            print("Deleted All Items Data")
+        self.displayed_items = self.get_items_data()
+        self.refresh_table_rows()
 
     async def handle_pick_files(self, e: ft.Event[ft.Button]):
         files = await ft.FilePicker().pick_files(
@@ -294,8 +322,15 @@ class ItemsPage(ft.Container):
             for row in df.itertuples():
                 try:
                     with DatabaseManager(DB_PATH) as db:
-                        db.execute_query("INSERT INTO items (code, name) VALUES (?, ?)", (row[1], row[2]))
-                        print("Items ADDED ", (row[1], row[2]))
+                        db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
+                        it = db.fetch_one("SELECT * FROM items WHERE item_code = ?", (row[1], ))
+                        if row[3]:
+                            distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
+                            if distro and it:
+                                db.execute_query(
+                                    "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",
+                                    (it["item_id"], distro["distributor_id"])
+                                )
                 except sqlite3.Error as err:
                     print(f"Error : %{err}")
 
