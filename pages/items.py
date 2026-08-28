@@ -153,7 +153,9 @@ class ItemsPage(ft.Container):
         return [
             fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Distributors"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Avilable Stock"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
             # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
 
@@ -162,6 +164,8 @@ class ItemsPage(ft.Container):
             lambda i: i.code,
             lambda i: i.name,
             lambda i: i.distributors[0].name,
+            lambda i: i.inventory.quantity_available if i.inventory else 1,
+            lambda i: i.inventory.quantity_sold if i.inventory else 1,
             # lambda i: i["unit_price"],
         ]
         self.displayed_items.sort(key=sorters[e.column_index], reverse = not e.ascending)
@@ -212,6 +216,8 @@ class ItemsPage(ft.Container):
         pass
 
     def handle_next_select(self, e: ft.Event[ft.Button]) -> None:
+        if not self.displayed_items:
+            return
 
         focused_index = next(
             (
@@ -228,6 +234,8 @@ class ItemsPage(ft.Container):
         self.refresh_table_rows()
 
     def handle_prev_select(self, e: ft.Event[ft.Button]) -> None:
+        if not self.displayed_items:
+            return
 
         focused_index = next(
             (
@@ -264,10 +272,12 @@ class ItemsPage(ft.Container):
                     ft.DataCell(ft.Text(item.name)),
                     ft.DataCell(ft.Row(
                         controls=[
-                            ft.Text(dist.name, opacity=1 if dist.is_primary else 0.6)
-                            for dist in item.distributors
+                            ft.Text(dist.name)
+                            for dist in item.distributors if dist.is_primary
                         ]
                     )),
+                    ft.DataCell(ft.Text(str(item.inventory.quantity_available) if item.inventory else "-")),
+                    ft.DataCell(ft.Text(str(item.inventory.quantity_sold) if item.inventory else "-")),
                     # ft.DataCell(ft.Text(item["unit_price"])),
             ]) 
             for item in self.displayed_items
@@ -287,12 +297,12 @@ class ItemsPage(ft.Container):
                     WHERE it.item_id = ?
                 """, (items[i].id,))
                 items[i].distributors = [Distributor(d["distributor_id"], d["distributor_name"], d["is_primary"]) for d in distros]
-        print(items)
         return items
 
     def delete_all_items(self):
         with DatabaseManager(DB_PATH) as db:
             db.execute_query("DELETE FROM items")
+            db.execute_query("DELETE FROM item_distributors")
             print("Deleted All Items Data")
         self.displayed_items = self.get_items_data()
         self.refresh_table_rows()
@@ -339,6 +349,9 @@ class ItemsPage(ft.Container):
             self.page.pop_dialog()
 
         else:
+            for row in df.itertuples():
+                if row[0] != 0:
+                    print(row)
             pass
 
 
