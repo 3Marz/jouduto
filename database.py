@@ -1,6 +1,8 @@
 import sqlite3
 from typing import Optional, Any, Tuple, List, Dict
 
+from datatypes import Inventory, Item
+
 class DatabaseManager:
     def __init__(self, path: str):
         self.path = path
@@ -58,6 +60,20 @@ class DatabaseManager:
         row = self.cur.fetchone()
         return dict(row) if row else None
 
+    def fetch_simple_one_item(self, item_code: str) -> Item | None: 
+
+        if self.cur is None:
+            raise Exception("Cursor not initialized")
+
+        self.cur.execute("SELECT * FROM items WHERE items.item_code = ?", (item_code,))
+        it = self.cur.fetchone()
+        if not it: 
+            return None
+
+        self.cur.execute("SELECT * FROM inventory WHERE inventory.item_id = ?", (it["item_id"],))
+        db_inv = self.cur.fetchone()
+        inv = Inventory(db_inv["inventory_id"], db_inv["item_id"], db_inv["quantity_available"], db_inv["quantity_ordered"], db_inv["quantity_sold"]) if db_inv else None
+        return Item(it["item_id"], it["item_code"], it["item_name"], inventory=inv)
 
 
 

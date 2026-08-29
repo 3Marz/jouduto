@@ -9,7 +9,7 @@ import flet as ft
 import flet_datatable2 as fdt
 import pandas as pd
 
-from datatypes import Item, Distributor
+from datatypes import Inventory, Item, Distributor
 
 @ft.control
 class ItemsPage(ft.Container):
@@ -56,7 +56,8 @@ class ItemsPage(ft.Container):
                                 content=ft.Row(
                                     controls=[
                                         ft.Radio(label="Items Data", value="items"),
-                                        ft.Radio(label="Inventory Data", value="inventory"),
+                                        ft.Radio(label="Avil Stock Data", value="avil_stock"),
+                                        ft.Radio(label="Sold Stock Data", value="sold_stock"),
                                     ]
                                 )
                             )
@@ -289,6 +290,7 @@ class ItemsPage(ft.Container):
             db_items = db.fetch_all("SELECT * FROM items")
             items = [Item(itm["item_id"], itm["item_code"], itm["item_name"]) for itm in db_items]
             for i in range(len(items)):
+                db_inv = db.fetch_one("SELECT * FROM inventory WHERE inventory.item_id = ?", (items[i].id,))
                 distros = db.fetch_all("""
                     SELECT d.distributor_id, d.distributor_name, itds.is_primary
                     FROM distributors d
@@ -296,13 +298,16 @@ class ItemsPage(ft.Container):
                     JOIN items it ON itds.item_id = it.item_id
                     WHERE it.item_id = ?
                 """, (items[i].id,))
+                items[i].inventory = Inventory(db_inv["inventory_id"], db_inv["item_id"], db_inv["quantity_available"], db_inv["quantity_ordered"], db_inv["quantity_sold"]) if db_inv else None
                 items[i].distributors = [Distributor(d["distributor_id"], d["distributor_name"], d["is_primary"]) for d in distros]
         return items
 
     def delete_all_items(self):
+        # TODO Delete all related tables with items delete
         with DatabaseManager(DB_PATH) as db:
             db.execute_query("DELETE FROM items")
             db.execute_query("DELETE FROM item_distributors")
+            db.execute_query("DELETE FROM inventory")
             print("Deleted All Items Data")
         self.displayed_items = self.get_items_data()
         self.refresh_table_rows()
@@ -333,27 +338,36 @@ class ItemsPage(ft.Container):
                 try:
                     with DatabaseManager(DB_PATH) as db:
                         db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
-                        it = db.fetch_one("SELECT * FROM items WHERE item_code = ?", (row[1], ))
+                        it = db.fetch_simple_one_item(row[1])
                         if row[3]:
                             distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
                             if distro and it:
                                 db.execute_query(
                                     "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",
-                                    (it["item_id"], distro["distributor_id"])
+                                    (it.id, distro["distributor_id"])
                                 )
                 except sqlite3.Error as err:
                     print(f"Error : %{err}")
 
-            self.displayed_items = self.get_items_data()
-            self.refresh_table_rows()
-            self.page.pop_dialog()
-
-        else:
+        elif self.selected_import_type == "avil_stock":
             for row in df.itertuples():
                 if row[0] != 0:
-                    print(row)
-            pass
+                    try:
+                        with DatabaseManager(DB_PATH) as db:
+                            it = db.fetch_simple_one_item(row[1])
+                            if it:
+                                if it.inventory:
+                                    db.execute_query("UPDATE inventory SET quantity_available = ? WHERE inventory_id = ?", (row[7], it.inventory.id))
+                                else:
+                                    db.execute_query("INSERT INTO inventory (item_id, quantity_available) VALUES (?, ?)", (it.id, row[7]))
+                    except sqlite3.Error as err:
+                        print(f"Error : %{err}")
 
+        self.files = []
+        self.pick_file_button.content = "Pick file"
+        self.displayed_items = self.get_items_data()
+        self.refresh_table_rows()
+        self.page.pop_dialog()
 
 
 

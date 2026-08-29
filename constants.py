@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS item_distributors (
     is_primary BOOLEAN DEFAULT FALSE,
     cost_price NUMERIC,
     PRIMARY KEY (item_id, distributor_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id),
-    FOREIGN KEY (distributor_id) REFERENCES distributors(distributor_id)
+    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE,
+    FOREIGN KEY (distributor_id) REFERENCES distributors(distributor_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS inventory (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     quantity_sold INTEGER DEFAULT 0,
     cost_price NUMERIC DEFAULT 0.0,
     last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (item_id) REFERENCES items(item_id)
+    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
 );
 """
 
