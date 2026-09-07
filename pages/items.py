@@ -363,6 +363,21 @@ class ItemsPage(ft.Container):
                     except sqlite3.Error as err:
                         print(f"Error : %{err}")
 
+        elif self.selected_import_type == "sold_stock":
+            for row in df.itertuples():
+                if row[0] != 0:
+                    print(row[1], row[11])
+                    try:
+                        with DatabaseManager(DB_PATH) as db:
+                            it = db.fetch_simple_one_item(row[1])
+                            if it:
+                                if it.inventory:
+                                    db.execute_query("UPDATE inventory SET quantity_sold = ? WHERE inventory_id = ?", (row[11], it.inventory.id))
+                                else:
+                                    db.execute_query("INSERT INTO inventory (item_id, quantity_sold) VALUES (?, ?)", (it.id, row[11]))
+                    except sqlite3.Error as err:
+                        print(f"Error : %{err}")
+
         self.files = []
         self.pick_file_button.content = "Pick file"
         self.displayed_items = self.get_items_data()

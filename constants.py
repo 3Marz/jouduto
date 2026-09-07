@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     item_id INTEGER NOT NULL UNIQUE,
     quantity_available INTEGER DEFAULT 0,
     quantity_ordered INTEGER DEFAULT 0,
-    quantity_sold INTEGER DEFAULT 0,
+    quantity_sold INTEGER DEFAULT NULL,
     cost_price NUMERIC DEFAULT 0.0,
     last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
