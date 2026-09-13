@@ -4,51 +4,25 @@ from typing import cast
 from database import DatabaseManager
 import constants
 import flet as ft
+
+from pages.home import HomePage 
 from pages.items import ItemsPage
 from pages.distributors import DistributorsPage
+from pages.purchase_orders import POPage
 
 class TabedPage:
     def __init__(self, title: str, content: ft.Control):
         self.title = title
         self.content = content
 
-@ft.control
-class ImportPage(ft.Container):
-    def __init__(self):
-        super().__init__()
-        self.expand = True
-
-        self.files: None | list[ft.FilePickerFile] = None 
-
-        self.render()
-    
-    def render(self):
-        controls = cast(list[ft.Control], [ 
-            ft.Text("Import sample data"),
-            ft.Button("Pick files", on_click=self.handle_pick_files),
-            ft.Text(self.files[0].path) if self.files else ft.Text("No files selected"),
-        ] )
-
-        self.content = ft.Column(controls=controls)
-
-    async def handle_pick_files(self, e: ft.Event[ft.Button]):
-        files = await ft.FilePicker().pick_files(
-            with_data=True,
-            allow_multiple=False,
-            file_type=ft.FilePickerFileType.CUSTOM,
-            allowed_extensions=["xls", "xlsx"],
-        )
-        self.files = files
-        self.render()
-
 pages: list[TabedPage] = []
 
 def initialize_pages():
      return [
-        TabedPage(title="Home", content=ft.Text("Home")),
+        TabedPage(title="Home", content=HomePage()),
         TabedPage(title="Items", content=ItemsPage()),
         TabedPage(title="Distributors", content=DistributorsPage()),
-        TabedPage(title="Import", content=ImportPage()),
+        TabedPage(title="Purchase Orders", content=POPage()),
     ]
 
 def initialize_database():
