@@ -26,3 +26,16 @@ class Item:
     inventory: Inventory | None = None
     distributors: list[Distributor] = field(default_factory=list)
 
+@dataclass
+class PurchaseOrder:
+    id: int
+    po_number: str
+    distributor_id: int
+    distributor_name: str = ""
+    status: str = "DRAFT"
+    order_date: str = ""
+    expected_date: str | None = None
+    received_date: str | None = None
+    notes: str | None = None
+    items: list[dict] = field(default_factory=list)
+
