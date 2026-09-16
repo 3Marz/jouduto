@@ -150,12 +150,19 @@ class ItemsPage(ft.Container):
             ]
         )
 
+    def reload(self):
+        self.displayed_items = self.get_items_data()
+        self.selected_item_ids = set()
+        self.focused_item_id = self.displayed_items[0].id if self.displayed_items else None
+        self.refresh_table_rows()
+
     def build_columns(self) -> list[fdt.DataColumn2]:
         return [
             fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Avilable Stock"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Ordered Stock"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Available Stock"), on_sort=self.handle_sort),
             fdt.DataColumn2(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
             # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
@@ -166,6 +173,7 @@ class ItemsPage(ft.Container):
             lambda i: i.name,
             lambda i: i.distributors[0].name,
             lambda i: i.inventory.quantity_available if i.inventory else 1,
+            lambda i: i.inventory.quantity_ordered if i.inventory else 1,
             lambda i: i.inventory.quantity_sold if i.inventory else 1,
             # lambda i: i["unit_price"],
         ]
@@ -277,6 +285,7 @@ class ItemsPage(ft.Container):
                             for dist in item.distributors if dist.is_primary
                         ]
                     )),
+                    ft.DataCell(ft.Text(str(item.inventory.quantity_ordered) if item.inventory else "-")),
                     ft.DataCell(ft.Text(str(item.inventory.quantity_available) if item.inventory else "-")),
                     ft.DataCell(ft.Text(str(item.inventory.quantity_sold) if item.inventory else "-")),
                     # ft.DataCell(ft.Text(item["unit_price"])),

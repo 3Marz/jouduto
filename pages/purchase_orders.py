@@ -57,16 +57,30 @@ class POPage(ft.Container):
         
         self.po_items_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, height=200)
         self.current_po_items: list[dict] = []
+        self.add_item_error_text = ft.Text("", color=ft.Colors.ERROR)
 
         def add_item_to_po(e):
-            if not self.item_dropdown.value: return
+            self.add_item_error_text.value = ""
+            if not self.item_dropdown.value:
+                return
+            try:
+                qty = int(self.qty_field.value)
+                cost = float(self.cost_field.value)
+            except (TypeError, ValueError):
+                self.add_item_error_text.value = "Qty must be a whole number and Unit Cost a number"
+                self.add_item_error_text.update()
+                return
+            if qty <= 0 or cost < 0:
+                self.add_item_error_text.value = "Qty must be > 0 and Unit Cost >= 0"
+                self.add_item_error_text.update()
+                return
             item = next(i for i in self.get_items_list() if str(i.id) == self.item_dropdown.value)
             self.current_po_items.append({
                 "item_id": item.id,
                 "code": item.code,
                 "name": item.name,
-                "qty": int(self.qty_field.value),
-                "cost": float(self.cost_field.value)
+                "qty": qty,
+                "cost": cost
             })
             self.refresh_po_items_preview()
 
@@ -80,6 +94,7 @@ class POPage(ft.Container):
                 ft.Divider(),
                 ft.Text("Items", weight=ft.FontWeight.BOLD),
                 ft.Row([self.item_dropdown, self.qty_field, self.cost_field, self.add_item_btn]),
+                self.add_item_error_text,
                 self.po_items_list,
             ], tight=True, width=600),
             actions=[
@@ -107,6 +122,11 @@ class POPage(ft.Container):
                 ]
             )
         )
+
+    def reload(self):
+        self.pos = self.get_pos_data()
+        self.po_table.rows = self.build_po_rows()
+        self.po_table.update()
 
     def handle_new_po(self):
         self.page.show_dialog(self.create_po_modal)
@@ -163,8 +183,8 @@ class POPage(ft.Container):
     def refresh_po_items_preview(self):
         self.po_items_list.controls = [
             ft.Row([
-                ft.Text(f"{item["code"]} - {item['name']} x{item['qty']}  @ {item['cost']}"),
-                ft.IconButton(ft.Icons.CLOSE, on_click=lambda e, i=idx: self.remove_item_from_po(idx))
+                ft.Text(f"{item['code']} - {item['name']} x{item['qty']} @ {item['cost']}"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=lambda e, i=idx: self.remove_item_from_po(i))
             ]) for idx, item in enumerate(self.current_po_items)
         ]
         self.po_items_list.update()
@@ -197,7 +217,7 @@ class POPage(ft.Container):
             else:
                 # CREATE NEW PO
                 db.execute_query(
-                    "INSERT INTO purchase_orders (po_number, distributor_id) VALUES (?, ?)",
+                    "INSERT INTO purchase_orders (po_number, distributor_id, status) VALUES (?, ?, 'ORDERED')",
                     (self.po_number_field.value, self.distributor_dropdown.value)
                 )
                 po_id = db.cur.lastrowid
@@ -224,6 +244,7 @@ class POPage(ft.Container):
         self.item_dropdown.value = None
         self.qty_field.value = "1"
         self.cost_field.value = "0.0"
+        self.add_item_error_text.value = ""
         
         self.refresh_po_items_preview()
         # Force update all form fields to clear visual state
@@ -298,5 +319,7 @@ class POPage(ft.Container):
         ]
         if e.column_index < len(sorters):
             self.pos.sort(key=sorters[e.column_index], reverse=not e.ascending)
+            self.po_table.sort_column_index = e.column_index
+            self.po_table.sort_ascending = e.ascending
             self.po_table.rows = self.build_po_rows()
             self.po_table.update()

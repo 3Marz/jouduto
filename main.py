@@ -35,6 +35,15 @@ def main(page: ft.Page):
     initialize_database()
     pages = initialize_pages()
 
+    def handle_tab_change(e: ft.Event[ft.Tabs]):
+        index = int(e.data)
+        reload_page = getattr(pages[index].content, "reload", None)
+        if reload_page:
+            try:
+                reload_page()
+            except RuntimeError:
+                pass
+
     page.title = "Jouduto"
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
@@ -45,6 +54,7 @@ def main(page: ft.Page):
                 expand=True,
                 length=len(pages),
                 selected_index=1,
+                on_change=handle_tab_change,
                 content=ft.Column(
                     expand=True,
                     controls=[

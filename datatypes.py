@@ -32,7 +32,7 @@ class PurchaseOrder:
     po_number: str
     distributor_id: int
     distributor_name: str = ""
-    status: str = "DRAFT"
+    status: str = "ORDERED"
     order_date: str = ""
     expected_date: str | None = None
     received_date: str | None = None

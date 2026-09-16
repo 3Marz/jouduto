@@ -67,6 +67,9 @@ class DistributorsPage(ft.Container):
             ]
         )
 
+    def reload(self):
+        self.refresh_distributors_list()
+
     def handle_create_name_change(self, e: ft.Event[ft.TextField]):
         self.create_distributor_name = e.control.value
 
