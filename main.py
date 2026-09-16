@@ -7,6 +7,7 @@ import flet as ft
 
 from pages.home import HomePage 
 from pages.items import ItemsPage
+from pages.item_details import ItemDetailsPage
 from pages.distributors import DistributorsPage
 from pages.purchase_orders import POPage
 
@@ -21,6 +22,7 @@ def initialize_pages():
      return [
         TabedPage(title="Home", content=HomePage()),
         TabedPage(title="Items", content=ItemsPage()),
+        TabedPage(title="Item Details", content=ItemDetailsPage()),
         TabedPage(title="Distributors", content=DistributorsPage()),
         TabedPage(title="Purchase Orders", content=POPage()),
     ]

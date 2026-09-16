@@ -1,23 +1,32 @@
 
 import sqlite3
-from typing import Tuple
 
 from database import DatabaseManager
 from constants import DB_PATH
 
 import flet as ft
-import flet_datatable2 as fdt
 import pandas as pd
 
 from datatypes import Inventory, Item, Distributor
+
+ITEMS_PAGE_SIZE = 70
+SCROLL_LOAD_THRESHOLD = 400.0
 
 @ft.control
 class ItemsPage(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        
-        self.displayed_items = self.get_items_data()
+
+        # Pagination / sorting state
+        self.total_items: int = 0
+        self.displayed_items: list[Item] = []
+        self.has_more: bool = False
+        self.is_loading: bool = False
+        self.sort_column_index: int | None = None
+        self.sort_ascending: bool = True
+        self.load_first_page()
+
         self.files: None | list[ft.FilePickerFile] = None
         self.selected_import_type: str | None = "items"
 
@@ -89,8 +98,7 @@ class ItemsPage(ft.Container):
             on_click=self.handle_next_select,
             tooltip="Select next item",
         )
-        self.table: fdt.DataTable2 = fdt.DataTable2(
-            expand=True,
+        self.table: ft.DataTable = ft.DataTable(
             on_select_all=self.handle_select_all,
             heading_row_color=ft.Colors.with_opacity(1, ft.Colors.SURFACE_CONTAINER_HIGH),
             border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER_HIGHEST),
@@ -103,6 +111,25 @@ class ItemsPage(ft.Container):
             divider_thickness=1,
             columns = self.build_columns(), 
             rows = self.build_rows()
+        )
+
+        # ScrollableControl so the table itself scrolls and on_scroll reports
+        # real pixel offsets (DataTable2 scrolls in Dart and hides that info).
+        self.table_container = ft.Column(
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+            on_scroll=self.handle_table_scroll,
+            controls=[self.table],
+        )
+
+        self.loaded_text = ft.Text(
+            f"Loaded {len(self.displayed_items)} of {self.total_items} items"
+        )
+        self.load_more_button = ft.Button(
+            content="Load more",
+            icon=ft.Icons.ARROW_DOWNWARD,
+            on_click=self.load_more,
+            visible=self.has_more,
         )
 
         self.imageView = ft.Container(expand=True, content=ft.Text("images"))
@@ -143,7 +170,11 @@ class ItemsPage(ft.Container):
                                 ]
                             ),
                             self.status_text,
-                            self.table
+                            self.table_container,
+                            ft.Row(
+                                controls=[self.loaded_text, self.load_more_button],
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            ),
                         ]
                     )
                 ),
@@ -151,36 +182,31 @@ class ItemsPage(ft.Container):
         )
 
     def reload(self):
-        self.displayed_items = self.get_items_data()
         self.selected_item_ids = set()
+        self.load_first_page()
         self.focused_item_id = self.displayed_items[0].id if self.displayed_items else None
         self.refresh_table_rows()
+        self.update_pagination_controls()
 
-    def build_columns(self) -> list[fdt.DataColumn2]:
+    def build_columns(self) -> list[ft.DataColumn]:
         return [
-            fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Ordered Stock"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Available Stock"), on_sort=self.handle_sort),
-            fdt.DataColumn2(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
-            # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Item Code"), on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Name"), on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Ordered Stock"), on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Available Stock"), on_sort=self.handle_sort),
+            ft.DataColumn(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
+            # ft.DataColumn(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
 
     def handle_sort(self, e: ft.DataColumnSortEvent):
-        sorters = [
-            lambda i: i.code,
-            lambda i: i.name,
-            lambda i: i.distributors[0].name,
-            lambda i: i.inventory.quantity_available if i.inventory else 1,
-            lambda i: i.inventory.quantity_ordered if i.inventory else 1,
-            lambda i: i.inventory.quantity_sold if i.inventory else 1,
-            # lambda i: i["unit_price"],
-        ]
-        self.displayed_items.sort(key=sorters[e.column_index], reverse = not e.ascending)
+        self.sort_column_index = e.column_index
+        self.sort_ascending = e.ascending
         self.table.sort_column_index = e.column_index
         self.table.sort_ascending = e.ascending
+        self.load_first_page()
         self.refresh_table_rows()
+        self.update_pagination_controls()
 
     def handle_select_item(self, e: ft.Event[ft.DataRow]):
         row = e.control
@@ -260,66 +286,139 @@ class ItemsPage(ft.Container):
         self.refresh_image_view()
         self.refresh_table_rows()
 
-    def build_rows(self) -> list[fdt.DataRow2]:
-        return [ 
-            fdt.DataRow2(
-                selected=item.id in self.selected_item_ids,
-                data=item.id,
-                on_select_change=self.handle_select_item,
-                color=(
-                    {
-                        ft.ControlState.DEFAULT: ft.Colors.with_opacity(0.20, ft.Colors.PRIMARY),
-                        ft.ControlState.SELECTED: ft.Colors.with_opacity(0.30, ft.Colors.PRIMARY),
-                    } 
-                    if item.id == self.focused_item_id 
-                    else {
-                        ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
-                    } 
-                ),
-                cells=[
-                    ft.DataCell(ft.Text(item.code)),
-                    ft.DataCell(ft.Text(item.name)),
-                    ft.DataCell(ft.Row(
-                        controls=[
-                            ft.Text(dist.name)
-                            for dist in item.distributors if dist.is_primary
-                        ]
-                    )),
-                    ft.DataCell(ft.Text(str(item.inventory.quantity_ordered) if item.inventory else "-")),
-                    ft.DataCell(ft.Text(str(item.inventory.quantity_available) if item.inventory else "-")),
-                    ft.DataCell(ft.Text(str(item.inventory.quantity_sold) if item.inventory else "-")),
-                    # ft.DataCell(ft.Text(item["unit_price"])),
-            ]) 
-            for item in self.displayed_items
-        ]
+    def build_rows(self) -> list[ft.DataRow]:
+        return [self.build_row(item) for item in self.displayed_items]
 
-    def get_items_data(self):
-        items: list[Item] = []
+    def build_row(self, item: Item) -> ft.DataRow:
+        return ft.DataRow(
+            selected=item.id in self.selected_item_ids,
+            data=item.id,
+            on_select_change=self.handle_select_item,
+            color=(
+                {
+                    ft.ControlState.DEFAULT: ft.Colors.with_opacity(0.20, ft.Colors.PRIMARY),
+                    ft.ControlState.SELECTED: ft.Colors.with_opacity(0.30, ft.Colors.PRIMARY),
+                } 
+                if item.id == self.focused_item_id 
+                else {
+                    ft.ControlState.SELECTED: ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY),
+                } 
+            ),
+            cells=[
+                ft.DataCell(ft.Text(item.code)),
+                ft.DataCell(ft.Text(item.name)),
+                ft.DataCell(ft.Row(
+                    controls=[
+                        ft.Text(dist.name)
+                        for dist in item.distributors if dist.is_primary
+                    ]
+                )),
+                ft.DataCell(ft.Text(str(item.inventory.quantity_ordered) if item.inventory else "-")),
+                ft.DataCell(ft.Text(str(item.inventory.quantity_available) if item.inventory else "-")),
+                ft.DataCell(ft.Text(str(item.inventory.quantity_sold) if item.inventory else "-")),
+                # ft.DataCell(ft.Text(item["unit_price"])),
+            ])
+
+    def count_items(self) -> int:
         with DatabaseManager(DB_PATH) as db:
-            db_items = db.fetch_all("SELECT * FROM items")
-            items = [Item(itm["item_id"], itm["item_code"], itm["item_name"]) for itm in db_items]
-            for i in range(len(items)):
-                db_inv = db.fetch_one("SELECT * FROM inventory WHERE inventory.item_id = ?", (items[i].id,))
-                distros = db.fetch_all("""
-                    SELECT d.distributor_id, d.distributor_name, itds.is_primary
-                    FROM distributors d
-                    JOIN item_distributors itds ON d.distributor_id = itds.distributor_id
-                    JOIN items it ON itds.item_id = it.item_id
-                    WHERE it.item_id = ?
-                """, (items[i].id,))
-                items[i].inventory = Inventory(db_inv["inventory_id"], db_inv["item_id"], db_inv["quantity_available"], db_inv["quantity_ordered"], db_inv["quantity_sold"]) if db_inv else None
-                items[i].distributors = [Distributor(d["distributor_id"], d["distributor_name"], d["is_primary"]) for d in distros]
-        return items
+            row = db.fetch_one("SELECT COUNT(*) AS n FROM items")
+        return row["n"] if row else 0
 
-    def delete_all_items(self):
+    def build_order_by(self) -> str:
+        columns = {
+            0: "it.item_code",
+            1: "it.item_name",
+            2: "COALESCE(d.distributor_name, '')",
+            3: "COALESCE(inv.quantity_ordered, 0)",
+            4: "COALESCE(inv.quantity_available, 0)",
+            5: "COALESCE(inv.quantity_sold, 0)",
+        }
+        column = columns.get(self.sort_column_index) if self.sort_column_index is not None else None
+        if column is None:
+            return "it.item_id ASC"
+        direction = "ASC" if self.sort_ascending else "DESC"
+        return f"{column} {direction}, it.item_id ASC"
+
+    def get_items_page(self, offset: int, limit: int) -> list[Item]:
+        query = f"""
+            SELECT it.item_id, it.item_code, it.item_name,
+                   d.distributor_id AS main_distributor_id,
+                   d.distributor_name AS main_distributor_name,
+                   inv.inventory_id, inv.quantity_available,
+                   inv.quantity_ordered, inv.quantity_sold
+            FROM items it
+            LEFT JOIN (
+                SELECT item_id, distributor_id
+                FROM item_distributors
+                WHERE is_primary = TRUE
+                GROUP BY item_id
+            ) idp ON idp.item_id = it.item_id
+            LEFT JOIN distributors d ON d.distributor_id = idp.distributor_id
+            LEFT JOIN inventory inv ON inv.item_id = it.item_id
+            ORDER BY {self.build_order_by()}
+            LIMIT ? OFFSET ?
+        """
+        with DatabaseManager(DB_PATH) as db:
+            rows = db.fetch_all(query, (limit, offset))
+        return [self.row_to_item(row) for row in rows]
+
+    def row_to_item(self, row: dict) -> Item:
+        item = Item(row["item_id"], row["item_code"], row["item_name"])
+        if row["inventory_id"] is not None:
+            item.inventory = Inventory(
+                row["inventory_id"], row["item_id"],
+                row["quantity_available"], row["quantity_ordered"], row["quantity_sold"],
+            )
+        if row["main_distributor_id"] is not None:
+            item.distributors = [
+                Distributor(row["main_distributor_id"], row["main_distributor_name"], True)
+            ]
+        return item
+
+    def load_first_page(self):
+        self.total_items = self.count_items()
+        self.displayed_items = self.get_items_page(0, ITEMS_PAGE_SIZE)
+        self.has_more = len(self.displayed_items) < self.total_items
+
+    def load_more(self, e: ft.Event[ft.Button] = None):
+        if self.is_loading or not self.has_more:
+            return
+
+        self.is_loading = True
+        self.update_pagination_controls()
+
+        new_items = self.get_items_page(len(self.displayed_items), ITEMS_PAGE_SIZE)
+        self.displayed_items.extend(new_items)
+        self.table.rows.extend(self.build_row(item) for item in new_items)
+        self.has_more = len(self.displayed_items) < self.total_items
+        self.is_loading = False
+
+        self.table.update()
+        self.update_pagination_controls()
+
+    def handle_table_scroll(self, e: ft.OnScrollEvent):
+        if e.max_scroll_extent <= 0:
+            return
+        if e.pixels >= e.max_scroll_extent - SCROLL_LOAD_THRESHOLD:
+            self.load_more()
+
+    def update_pagination_controls(self):
+        self.loaded_text.value = f"Loaded {len(self.displayed_items)} of {self.total_items} items"
+        self.load_more_button.visible = self.has_more
+        self.load_more_button.disabled = self.is_loading
+        self.loaded_text.update()
+        self.load_more_button.update()
+
+    def delete_all_items(self, e: ft.Event[ft.Button] = None):
         # TODO Delete all related tables with items delete
         with DatabaseManager(DB_PATH) as db:
             db.execute_query("DELETE FROM items")
             db.execute_query("DELETE FROM item_distributors")
             db.execute_query("DELETE FROM inventory")
             print("Deleted All Items Data")
-        self.displayed_items = self.get_items_data()
+        self.load_first_page()
         self.refresh_table_rows()
+        self.update_pagination_controls()
 
     async def handle_pick_files(self, e: ft.Event[ft.Button]):
         files = await ft.FilePicker().pick_files(
@@ -389,9 +488,7 @@ class ItemsPage(ft.Container):
 
         self.files = []
         self.pick_file_button.content = "Pick file"
-        self.displayed_items = self.get_items_data()
+        self.load_first_page()
         self.refresh_table_rows()
+        self.update_pagination_controls()
         self.page.pop_dialog()
-
-
-
