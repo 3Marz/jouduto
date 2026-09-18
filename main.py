@@ -1,78 +1,123 @@
-
-from typing import cast
-
 from database import DatabaseManager
 import constants
 import flet as ft
 
-from pages.home import HomePage 
+from pages.home import HomePage
 from pages.items import ItemsPage
 from pages.item_details import ItemDetailsPage
 from pages.distributors import DistributorsPage
 from pages.purchase_orders import POPage
 
-class TabedPage:
-    def __init__(self, title: str, content: ft.Control):
+
+class PageRoute:
+    def __init__(self, route: str, title: str, page_type: type):
+        self.route = route
         self.title = title
-        self.content = content
+        self.page_type = page_type
 
-pages: list[TabedPage] = []
 
-def initialize_pages():
-     return [
-        TabedPage(title="Home", content=HomePage()),
-        TabedPage(title="Items", content=ItemsPage()),
-        TabedPage(title="Item Details", content=ItemDetailsPage()),
-        TabedPage(title="Distributors", content=DistributorsPage()),
-        TabedPage(title="Purchase Orders", content=POPage()),
+def initialize_pages() -> list[PageRoute]:
+    return [
+        PageRoute("/", "Home", HomePage),
+        PageRoute("/items", "Items", ItemsPage),
+        PageRoute("/item-details", "Item Details", ItemDetailsPage),
+        PageRoute("/distributors", "Distributors", DistributorsPage),
+        PageRoute("/pos", "Purchase Orders", POPage),
     ]
+
 
 def initialize_database():
     with DatabaseManager(constants.DB_PATH) as db:
         db.execute_script(constants.INITIAL_DB_SCHEME)
         print("Database initialized")
 
+
 def main(page: ft.Page):
-
     initialize_database()
-    pages = initialize_pages()
-
-    def handle_tab_change(e: ft.Event[ft.Tabs]):
-        index = int(e.data)
-        reload_page = getattr(pages[index].content, "reload", None)
-        if reload_page:
-            try:
-                reload_page()
-            except RuntimeError:
-                pass
+    routes = initialize_pages()
+    pages_by_route = {route.route: route for route in routes}
 
     page.title = "Jouduto"
-    page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
-    page.add(
-        ft.SafeArea(
-            expand=True,
-            content=ft.Tabs(
-                expand=True,
-                length=len(pages),
-                selected_index=1,
-                on_change=handle_tab_change,
-                content=ft.Column(
-                    expand=True,
-                    controls=[
-                        ft.TabBar(
-                            tabs=[ft.Tab(page.title) for page in pages],
-                        ),
-                        ft.TabBarView(
+    def make_app_bar(title: str) -> ft.AppBar:
+        return ft.AppBar(
+            title=ft.Text(title),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+        )
+
+    def make_nav_handler(route: str):
+        def handler(e):
+            page.navigate(route)
+        return handler
+
+    # Every route change rebuilds the views from scratch, so each page gets a
+    # fresh instance (its state resets every time you enter it).
+    def route_change(e: ft.RouteChangeEvent = None):
+        page.views.clear()
+
+        # Landing view with a button for every section.
+        page.views.append(
+            ft.View(
+                route="/",
+                controls=[
+                    make_app_bar("Jouduto"),
+                    ft.SafeArea(
+                        expand=True,
+                        content=ft.Column(
                             expand=True,
-                            controls=[page.content for page in pages],
-                        )
-                    ]
-                )
+                            controls=[
+                                HomePage(),
+                                ft.Divider(),
+                                ft.Text(
+                                    "Navigate",
+                                    theme_style=ft.TextThemeStyle.TITLE_MEDIUM,
+                                ),
+                                ft.Row(
+                                    wrap=True,
+                                    spacing=10,
+                                    controls=[
+                                        ft.Button(
+                                            content=route_info.title,
+                                            icon=ft.Icons.ARROW_FORWARD,
+                                            on_click=make_nav_handler(route_info.route),
+                                        )
+                                        for route_info in routes
+                                        if route_info.route != "/"
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ),
+                ],
             )
         )
-    )
+
+        current = pages_by_route.get(page.route)
+        if current is not None and current.route != "/":
+            page.views.append(
+                ft.View(
+                    route=current.route,
+                    controls=[
+                        make_app_bar(current.title),
+                        ft.SafeArea(expand=True, content=current.page_type()),
+                    ],
+                )
+            )
+
+        page.update()
+
+    async def view_pop(e: ft.ViewPopEvent):
+        if e.view is not None:
+            print("View pop:", e.view)
+            page.views.remove(e.view)
+            top_view = page.views[-1]
+            await page.push_route(top_view.route)
+
+    page.on_route_change = route_change
+    page.on_view_pop = view_pop
+
+    route_change()
+
 
 if __name__ == "__main__":
     ft.run(main)
-
