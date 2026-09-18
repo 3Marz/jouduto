@@ -5,12 +5,13 @@ from database import DatabaseManager
 from constants import DB_PATH
 
 import flet as ft
+import flet_datatable2 as fdt
 import pandas as pd
 
 from datatypes import Inventory, Item, Distributor
 
 ITEMS_PAGE_SIZE = 70
-SCROLL_LOAD_THRESHOLD = 400.0
+SCROLL_LOAD_THRESHOLD = 600.0
 
 @ft.control
 class ItemsPage(ft.Container):
@@ -25,6 +26,7 @@ class ItemsPage(ft.Container):
         self.is_loading: bool = False
         self.sort_column_index: int | None = None
         self.sort_ascending: bool = True
+        self.scroll_accumulator: float = 0.0
         self.load_first_page()
 
         self.files: None | list[ft.FilePickerFile] = None
@@ -98,7 +100,8 @@ class ItemsPage(ft.Container):
             on_click=self.handle_next_select,
             tooltip="Select next item",
         )
-        self.table: ft.DataTable = ft.DataTable(
+        self.table: fdt.DataTable2 = fdt.DataTable2(
+            expand=True,
             on_select_all=self.handle_select_all,
             heading_row_color=ft.Colors.with_opacity(1, ft.Colors.SURFACE_CONTAINER_HIGH),
             border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER_HIGHEST),
@@ -113,13 +116,11 @@ class ItemsPage(ft.Container):
             rows = self.build_rows()
         )
 
-        # ScrollableControl so the table itself scrolls and on_scroll reports
-        # real pixel offsets (DataTable2 scrolls in Dart and hides that info).
-        self.table_container = ft.Column(
+        # Loads the next page when the user scrolls the mouse wheel over the table.
+        self.table_wrapper = ft.GestureDetector(
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
             on_scroll=self.handle_table_scroll,
-            controls=[self.table],
+            content=self.table,
         )
 
         self.loaded_text = ft.Text(
@@ -170,7 +171,7 @@ class ItemsPage(ft.Container):
                                 ]
                             ),
                             self.status_text,
-                            self.table_container,
+                            self.table_wrapper,
                             ft.Row(
                                 controls=[self.loaded_text, self.load_more_button],
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -188,15 +189,15 @@ class ItemsPage(ft.Container):
         self.refresh_table_rows()
         self.update_pagination_controls()
 
-    def build_columns(self) -> list[ft.DataColumn]:
+    def build_columns(self) -> list[fdt.DataColumn2]:
         return [
-            ft.DataColumn(label=ft.Text("Item Code"), on_sort=self.handle_sort),
-            ft.DataColumn(label=ft.Text("Name"), on_sort=self.handle_sort),
-            ft.DataColumn(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
-            ft.DataColumn(label=ft.Text("Ordered Stock"), on_sort=self.handle_sort),
-            ft.DataColumn(label=ft.Text("Available Stock"), on_sort=self.handle_sort),
-            ft.DataColumn(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
-            # ft.DataColumn(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Item Code"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Name"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Main Distributor"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Ordered Stock"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Available Stock"), on_sort=self.handle_sort),
+            fdt.DataColumn2(label=ft.Text("Sold Stock"), on_sort=self.handle_sort),
+            # fdt.DataColumn2(label=ft.Text("Unit Price"), numeric=True, on_sort=self.handle_sort),
         ]
 
     def handle_sort(self, e: ft.DataColumnSortEvent):
@@ -286,11 +287,11 @@ class ItemsPage(ft.Container):
         self.refresh_image_view()
         self.refresh_table_rows()
 
-    def build_rows(self) -> list[ft.DataRow]:
+    def build_rows(self) -> list[fdt.DataRow2]:
         return [self.build_row(item) for item in self.displayed_items]
 
-    def build_row(self, item: Item) -> ft.DataRow:
-        return ft.DataRow(
+    def build_row(self, item: Item) -> fdt.DataRow2:
+        return fdt.DataRow2(
             selected=item.id in self.selected_item_ids,
             data=item.id,
             on_select_change=self.handle_select_item,
@@ -379,6 +380,7 @@ class ItemsPage(ft.Container):
         self.total_items = self.count_items()
         self.displayed_items = self.get_items_page(0, ITEMS_PAGE_SIZE)
         self.has_more = len(self.displayed_items) < self.total_items
+        self.scroll_accumulator = 0.0
 
     def load_more(self, e: ft.Event[ft.Button] = None):
         if self.is_loading or not self.has_more:
@@ -396,10 +398,13 @@ class ItemsPage(ft.Container):
         self.table.update()
         self.update_pagination_controls()
 
-    def handle_table_scroll(self, e: ft.OnScrollEvent):
-        if e.max_scroll_extent <= 0:
+    def handle_table_scroll(self, e: ft.ScrollEvent):
+        delta = e.scroll_delta
+        if delta is None or delta.y <= 0:
             return
-        if e.pixels >= e.max_scroll_extent - SCROLL_LOAD_THRESHOLD:
+        self.scroll_accumulator += delta.y
+        if self.scroll_accumulator >= SCROLL_LOAD_THRESHOLD:
+            self.scroll_accumulator = 0.0
             self.load_more()
 
     def update_pagination_controls(self):
