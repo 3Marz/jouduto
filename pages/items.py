@@ -1,5 +1,6 @@
 
 import sqlite3
+import asyncio
 
 from database import DatabaseManager
 from constants import DB_PATH
@@ -12,6 +13,7 @@ from datatypes import Inventory, Item, Distributor
 
 ITEMS_PAGE_SIZE = 70
 SCROLL_LOAD_THRESHOLD = 600.0
+SEARCH_DEBOUNCE_SECONDS = 0.3
 
 @ft.control
 class ItemsPage(ft.Container):
@@ -26,6 +28,8 @@ class ItemsPage(ft.Container):
         self.is_loading: bool = False
         self.sort_column_index: int | None = None
         self.sort_ascending: bool = True
+        self.search_query: str = ""
+        self._search_generation: int = 0
         self.scroll_accumulator: float = 0.0
         self.load_first_page()
 
@@ -149,6 +153,16 @@ class ItemsPage(ft.Container):
 
         self.imageView = ft.Container(expand=True, content=ft.Text("images"))
 
+        self.search_field = ft.TextField(
+            border_radius=ft.BorderRadius.all(30),
+            border_color=ft.Colors.SURFACE_BRIGHT,
+            hint_text="Search by code or name...",
+            icon=ft.Icons.SEARCH,
+            expand=True,
+            on_change=self.handle_search_change,
+            on_submit=self.handle_search_submit,
+        )
+
         self.content = ft.Row(
             controls=[
                 ft.SafeArea(
@@ -167,18 +181,19 @@ class ItemsPage(ft.Container):
                                                 content="Un/Select",
                                                 icon=ft.Icons.CHECK,
                                                 on_click=self.handle_select_item_button,
-                                            )
+                                            ),
+                                            self.search_field,
                                         ]
                                     ),
                                     ft.Row(
                                         alignment=ft.MainAxisAlignment.END,
                                         expand=True,
                                         controls=[
-                                            ft.Button(
-                                                "Delete All",
-                                                icon=ft.Icons.DELETE,
-                                                on_click=self.delete_all_items
-                                            ),
+                                            # ft.Button(
+                                            #     "Delete All",
+                                            #     icon=ft.Icons.DELETE,
+                                            #     on_click=self.delete_all_items
+                                            # ),
                                             self.import_data_button,
                                         ]
                                     ),
@@ -197,6 +212,38 @@ class ItemsPage(ft.Container):
         )
 
     def reload(self):
+        self.selected_item_ids = set()
+        self.load_first_page()
+        self.focused_item_id = self.displayed_items[0].id if self.displayed_items else None
+        self.refresh_table_rows()
+        self.update_pagination_controls()
+
+    def search_pattern(self) -> str | None:
+        """LIKE pattern (escaped) for the active search, or None when empty."""
+        query = (self.search_query or "").strip()
+        if not query:
+            return None
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return f"%{escaped}%"
+
+    async def handle_search_change(self, e: ft.Event[ft.TextField]):
+        self.search_query = e.control.value or ""
+        self._search_generation += 1
+        generation = self._search_generation
+        await asyncio.sleep(SEARCH_DEBOUNCE_SECONDS)
+        if generation != self._search_generation:
+            return  # a newer keystroke superseded this one
+        try:
+            self.apply_search()
+        except RuntimeError:
+            pass  # page was left during the debounce window
+
+    def handle_search_submit(self, e: ft.Event[ft.TextField]):
+        self.search_query = e.control.value or ""
+        self._search_generation += 1  # cancel any pending debounce
+        self.apply_search()
+
+    def apply_search(self):
         self.selected_item_ids = set()
         self.load_first_page()
         self.focused_item_id = self.displayed_items[0].id if self.displayed_items else None
@@ -352,8 +399,17 @@ class ItemsPage(ft.Container):
             ])
 
     def count_items(self) -> int:
+        pattern = self.search_pattern()
         with DatabaseManager(DB_PATH) as db:
-            row = db.fetch_one("SELECT COUNT(*) AS n FROM items")
+            if pattern is not None:
+                row = db.fetch_one(
+                    "SELECT COUNT(*) AS n FROM items "
+                    "WHERE item_code LIKE ? ESCAPE '\\' "
+                    "OR item_name LIKE ? ESCAPE '\\'",
+                    (pattern, pattern),
+                )
+            else:
+                row = db.fetch_one("SELECT COUNT(*) AS n FROM items")
         return row["n"] if row else 0
 
     def build_order_by(self) -> str:
@@ -372,6 +428,16 @@ class ItemsPage(ft.Container):
         return f"{column} {direction}, it.item_id ASC"
 
     def get_items_page(self, offset: int, limit: int) -> list[Item]:
+        where = ""
+        params: list = []
+        pattern = self.search_pattern()
+        if pattern is not None:
+            where = (
+                "WHERE it.item_code LIKE ? ESCAPE '\\' "
+                "OR it.item_name LIKE ? ESCAPE '\\'"
+            )
+            params = [pattern, pattern]
+
         query = f"""
             SELECT it.item_id, it.item_code, it.item_name,
                    d.distributor_id AS main_distributor_id,
@@ -387,11 +453,12 @@ class ItemsPage(ft.Container):
             ) idp ON idp.item_id = it.item_id
             LEFT JOIN distributors d ON d.distributor_id = idp.distributor_id
             LEFT JOIN inventory inv ON inv.item_id = it.item_id
+            {where}
             ORDER BY {self.build_order_by()}
             LIMIT ? OFFSET ?
         """
         with DatabaseManager(DB_PATH) as db:
-            rows = db.fetch_all(query, (limit, offset))
+            rows = db.fetch_all(query, (*params, limit, offset))
         return [self.row_to_item(row) for row in rows]
 
     def row_to_item(self, row: dict) -> Item:
