@@ -6,6 +6,7 @@ from database import DatabaseManager
 from datatypes import Item
 
 import flet as ft
+import flet_datatable2 as fdt
 
 
 SEARCH_SUGGESTION_LIMIT = 50
@@ -46,14 +47,14 @@ class ItemDetailsPage(ft.Container):
         self.save_status = ft.Text("")
 
         self.po_placeholder = ft.Text("")
-        self.po_table = ft.DataTable(
+        self.po_table = fdt.DataTable2(
             columns=[
-                ft.DataColumn(label=ft.Text("PO #")),
-                ft.DataColumn(label=ft.Text("Distributor")),
-                ft.DataColumn(label=ft.Text("Status")),
-                ft.DataColumn(label=ft.Text("Order Date")),
-                ft.DataColumn(label=ft.Text("Qty Ordered"), numeric=True),
-                ft.DataColumn(label=ft.Text("Unit Cost"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("PO #")),
+                fdt.DataColumn2(label=ft.Text("Distributor")),
+                fdt.DataColumn2(label=ft.Text("Qty Ordered"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Unit Cost"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Status")),
+                fdt.DataColumn2(label=ft.Text("Order Date")),
             ],
             rows=[],
         )
@@ -61,32 +62,45 @@ class ItemDetailsPage(ft.Container):
         self.details_panel = ft.Container(
             visible=False,
             expand=True,
-            content=ft.Column(
+            content=ft.Row(
                 expand=True,
-                scroll=ft.ScrollMode.AUTO,
                 controls=[
-                    ft.Text("Item Code", size=12, color=ft.Colors.OUTLINE),
-                    self.code_text,
-                    ft.Divider(),
-                    self.name_field,
-                    self.distributor_dropdown,
-                    ft.Row(
+                    # Left column: item info & editing.
+                    ft.Column(
+                        width=300,
+                        scroll=ft.ScrollMode.AUTO,
                         controls=[
-                            ft.Button(
-                                "Save Changes",
-                                icon=ft.Icons.SAVE,
-                                on_click=self.handle_save,
+                            ft.Text("Item Code", size=12, color=ft.Colors.OUTLINE),
+                            self.code_text,
+                            ft.Divider(),
+                            self.name_field,
+                            self.distributor_dropdown,
+                            ft.Row(
+                                controls=[
+                                    ft.Button(
+                                        "Save Changes",
+                                        icon=ft.Icons.SAVE,
+                                        on_click=self.handle_save,
+                                    ),
+                                    self.save_status,
+                                ]
                             ),
-                            self.save_status,
-                        ]
+                            ft.Divider(),
+                            ft.Text("Stock", weight=ft.FontWeight.BOLD),
+                            self.inventory_text,
+                        ],
                     ),
-                    ft.Divider(),
-                    ft.Text("Stock", weight=ft.FontWeight.BOLD),
-                    self.inventory_text,
-                    ft.Divider(),
-                    ft.Text("Purchase Orders", weight=ft.FontWeight.BOLD),
-                    self.po_placeholder,
-                    self.po_table,
+                    ft.VerticalDivider(),
+                    # Right column: purchase orders history.
+                    ft.Column(
+                        expand=True,
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[
+                            ft.Text("Purchase Orders", weight=ft.FontWeight.BOLD),
+                            self.po_placeholder,
+                            self.po_table,
+                        ],
+                    ),
                 ],
             ),
         )
@@ -195,9 +209,18 @@ class ItemDetailsPage(ft.Container):
         await self.select_item_by_id(e.control.data)
 
     async def select_item_by_id(self, item_id: int):
+        if not self.open_focused_item(item_id):
+            return
+
+        self.search_bar.update()
+        self.details_panel.update()
+        await self.search_bar.close_view(self.search_bar.value)
+
+    def open_focused_item(self, item_id: int) -> bool:
+        """Loads an item's details into the panel (sync; safe before page attach)."""
         item = next((i for i in self.items if i.id == item_id), None)
         if item is None:
-            return
+            return False
 
         self.selected_item_id = item.id
         self.code_text.value = item.code
@@ -205,11 +228,8 @@ class ItemDetailsPage(ft.Container):
         self.save_status.value = ""
         self.load_item_details(item.id)
         self.details_panel.visible = True
-
         self.search_bar.value = f"{item.code} - {item.name}"
-        self.search_bar.update()
-        self.details_panel.update()
-        await self.search_bar.close_view(f"{item.code} - {item.name}")
+        return True
 
     def load_item_details(self, item_id: int):
         with DatabaseManager(DB_PATH) as db:
@@ -248,14 +268,14 @@ class ItemDetailsPage(ft.Container):
             self.inventory_text.value = "No inventory record"
 
         self.po_table.rows = [
-            ft.DataRow(
+            fdt.DataRow2(
                 cells=[
                     ft.DataCell(ft.Text(po["po_number"])),
                     ft.DataCell(ft.Text(po["distributor_name"])),
-                    ft.DataCell(ft.Text(po["status"])),
-                    ft.DataCell(ft.Text(po["order_date"] or "")),
                     ft.DataCell(ft.Text(str(po["quantity_ordered"]))),
                     ft.DataCell(ft.Text(str(po["unit_cost"]))),
+                    ft.DataCell(ft.Text(po["status"])),
+                    ft.DataCell(ft.Text(po["order_date"] or "")),
                 ]
             )
             for po in pos

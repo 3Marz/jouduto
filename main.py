@@ -1,5 +1,6 @@
 from database import DatabaseManager
 import constants
+import urllib.parse
 import flet as ft
 
 from pages.home import HomePage
@@ -37,6 +38,10 @@ def main(page: ft.Page):
     routes = initialize_pages()
     pages_by_route = {route.route: route for route in routes}
 
+    page.theme = ft.Theme(
+        color_scheme_seed=ft.Colors.PURPLE
+    )
+    page.theme_mode = ft.ThemeMode.SYSTEM
     page.title = "Jouduto"
 
     def make_app_bar(title: str) -> ft.AppBar:
@@ -92,14 +97,23 @@ def main(page: ft.Page):
             )
         )
 
-        current = pages_by_route.get(page.route)
+        current = pages_by_route.get(page.route.split("?", 1)[0])
         if current is not None and current.route != "/":
+            content = current.page_type()
+            if current.route == "/item-details":
+                query = urllib.parse.parse_qs(page.route.split("?", 1)[1]) if "?" in page.route else {}
+                item_param = query.get("item")
+                if item_param:
+                    try:
+                        content.open_focused_item(int(item_param[0]))
+                    except ValueError:
+                        pass
             page.views.append(
                 ft.View(
-                    route=current.route,
+                    route=page.route,
                     controls=[
                         make_app_bar(current.title),
-                        ft.SafeArea(expand=True, content=current.page_type()),
+                        ft.SafeArea(expand=True, content=content),
                     ],
                 )
             )

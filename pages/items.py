@@ -36,6 +36,7 @@ class ItemsPage(ft.Container):
         self.focused_item_id: int | None = self.displayed_items[0].id if self.displayed_items else None
 
         self.status_text = ft.Text("No items selected")
+        self.mouse_pos = ft.Offset()
 
         self.import_data_button = ft.Button(
             content="Import Data",
@@ -117,11 +118,24 @@ class ItemsPage(ft.Container):
         )
 
         # Loads the next page when the user scrolls the mouse wheel over the table.
-        self.table_wrapper = ft.GestureDetector(
+        self.table_wrapper = ft.ContextMenu(
+            items=[
+                ft.PopupMenuItem(
+                    content="View Item Details",
+                    icon=ft.Icons.REMOVE_RED_EYE,
+                    on_click=self.handle_view_item_details,
+                ),
+            ],
+            secondary_trigger=None,
             expand=True,
-            on_scroll=self.handle_table_scroll,
-            content=self.table,
+            content=ft.GestureDetector(
+                on_secondary_tap_down=lambda e: self.handle_mouse_update(e),
+                expand=True,
+                on_scroll=self.handle_table_scroll,
+                content=self.table,
+            ),
         )
+
 
         self.loaded_text = ft.Text(
             f"Loaded {len(self.displayed_items)} of {self.total_items} items"
@@ -222,6 +236,22 @@ class ItemsPage(ft.Container):
 
         self.refresh_table_rows()
 
+    async def handle_right_click(self, e: ft.Event[ft.DataRow]):
+        row = e.control
+        item_id = row.data
+        self.focused_item_id = item_id
+
+        await self.table_wrapper.open(
+            global_position=self.mouse_pos
+        )
+
+        self.refresh_table_rows()
+
+    def handle_view_item_details(self, e: ft.Event[ft.PopupMenuItem]):
+        if self.focused_item_id is None:
+            return
+        self.page.navigate(f"/item-details?item={self.focused_item_id}")
+
     def handle_select_all(self, e: ft.Event[ft.DataTable]):
         if e.data:
             self.selected_item_ids.update(int(item.id) for item in self.displayed_items)
@@ -294,6 +324,7 @@ class ItemsPage(ft.Container):
         return fdt.DataRow2(
             selected=item.id in self.selected_item_ids,
             data=item.id,
+            on_secondary_tap=self.handle_right_click,
             on_select_change=self.handle_select_item,
             color=(
                 {
@@ -406,6 +437,9 @@ class ItemsPage(ft.Container):
         if self.scroll_accumulator >= SCROLL_LOAD_THRESHOLD:
             self.scroll_accumulator = 0.0
             self.load_more()
+
+    def handle_mouse_update(self, e: ft.TapEvent):
+        self.mouse_pos = e.global_position
 
     def update_pagination_controls(self):
         self.loaded_text.value = f"Loaded {len(self.displayed_items)} of {self.total_items} items"
