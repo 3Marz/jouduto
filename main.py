@@ -81,9 +81,11 @@ def main(page: ft.Page):
         # Re-seed the color scheme from the newly active year's color so the
         # whole app visibly recolors when you switch years.
         apply_year_theme()
-        # Home is cached: drop it so it rebuilds with the new year's badge.
-        home_view = None
-        page.navigate("/")
+        # Rebuild home immediately so dashboard stats reflect the new year's DB.
+        home_view = make_home_view()
+        page.views.clear()
+        page.views.append(home_view)
+        page.update()
 
     # Stack shapes: [Home] -> [Home, Section] -> [Home, Section, ItemDetails].
     # Views are reconciled (never wiped blindly) so item-details opens ON TOP
@@ -107,29 +109,9 @@ def main(page: ft.Page):
                 make_app_bar("Jouduto"),
                 ft.SafeArea(
                     expand=True,
-                    content=ft.Column(
-                        expand=True,
-                        controls=[
-                            HomePage(on_year_change=handle_year_change),
-                            ft.Divider(),
-                            ft.Text(
-                                "Navigate",
-                                theme_style=ft.TextThemeStyle.TITLE_MEDIUM,
-                            ),
-                            ft.Row(
-                                wrap=True,
-                                spacing=10,
-                                controls=[
-                                    ft.Button(
-                                        content=route_info.title,
-                                        icon=ft.Icons.ARROW_FORWARD,
-                                        on_click=make_nav_handler(route_info.route),
-                                    )
-                                    for route_info in routes
-                                    if route_info.route != "/"
-                                ],
-                            ),
-                        ],
+                    content=HomePage(
+                        on_year_change=handle_year_change,
+                        on_navigate=page.navigate,
                     ),
                 ),
             ],
