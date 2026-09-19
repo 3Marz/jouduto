@@ -40,16 +40,34 @@ def main(page: ft.Page):
     routes = initialize_pages()
     pages_by_route = {route.route: route for route in routes}
 
-    page.theme = ft.Theme(
-        color_scheme_seed=ft.Colors.PURPLE
-    )
-    page.theme_mode = ft.ThemeMode.SYSTEM
+    def apply_year_theme() -> None:
+        # Re-seed the whole color scheme from the active year's color so the
+        # app visibly reflects which fiscal year is selected.
+        page.theme = ft.Theme(
+            color_scheme_seed=appstate.get_year_color()
+        )
+        page.theme_mode = ft.ThemeMode.SYSTEM
+        page.update()
+
+    apply_year_theme()
     page.title = "Jouduto"
 
     def make_app_bar(title: str) -> ft.AppBar:
+        year = appstate.get_active_year()
         return ft.AppBar(
             title=ft.Text(title),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            actions=[
+                ft.Container(
+                    content=ft.Text(
+                        str(year),
+                        weight=ft.FontWeight.BOLD,
+                        size=20
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=20),
+                    tooltip=f"Active fiscal year: {year}",
+                )
+            ],
         )
 
     def make_nav_handler(route: str):
@@ -58,7 +76,13 @@ def main(page: ft.Page):
         return handler
 
     def handle_year_change(year: int):
+        nonlocal home_view
         appstate.set_active_year(year)
+        # Re-seed the color scheme from the newly active year's color so the
+        # whole app visibly recolors when you switch years.
+        apply_year_theme()
+        # Home is cached: drop it so it rebuilds with the new year's badge.
+        home_view = None
         page.navigate("/")
 
     # Stack shapes: [Home] -> [Home, Section] -> [Home, Section, ItemDetails].
