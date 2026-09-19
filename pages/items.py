@@ -3,7 +3,6 @@ import sqlite3
 import asyncio
 
 from database import DatabaseManager
-from constants import DB_PATH
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -400,7 +399,7 @@ class ItemsPage(ft.Container):
 
     def count_items(self) -> int:
         pattern = self.search_pattern()
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             if pattern is not None:
                 row = db.fetch_one(
                     "SELECT COUNT(*) AS n FROM items "
@@ -457,7 +456,7 @@ class ItemsPage(ft.Container):
             ORDER BY {self.build_order_by()}
             LIMIT ? OFFSET ?
         """
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             rows = db.fetch_all(query, (*params, limit, offset))
         return [self.row_to_item(row) for row in rows]
 
@@ -517,7 +516,7 @@ class ItemsPage(ft.Container):
 
     def delete_all_items(self, e: ft.Event[ft.Button] = None):
         # TODO Delete all related tables with items delete
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             db.execute_query("DELETE FROM items")
             db.execute_query("DELETE FROM item_distributors")
             db.execute_query("DELETE FROM inventory")
@@ -550,7 +549,7 @@ class ItemsPage(ft.Container):
 
             for row in df.itertuples():
                 try:
-                    with DatabaseManager(DB_PATH) as db:
+                    with DatabaseManager() as db:
                         db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
                         it = db.fetch_simple_one_item(row[1])
                         if row[3]:
@@ -567,7 +566,7 @@ class ItemsPage(ft.Container):
             for row in df.itertuples():
                 if row[0] != 0:
                     try:
-                        with DatabaseManager(DB_PATH) as db:
+                        with DatabaseManager() as db:
                             it = db.fetch_simple_one_item(row[1])
                             if it:
                                 if it.inventory:
@@ -582,7 +581,7 @@ class ItemsPage(ft.Container):
                 if row[0] != 0:
                     print(row[1], row[11])
                     try:
-                        with DatabaseManager(DB_PATH) as db:
+                        with DatabaseManager() as db:
                             it = db.fetch_simple_one_item(row[1])
                             if it:
                                 if it.inventory:

@@ -1,5 +1,6 @@
 from database import DatabaseManager
 import constants
+import appstate
 import urllib.parse
 import flet as ft
 
@@ -28,9 +29,10 @@ def initialize_pages() -> list[PageRoute]:
 
 
 def initialize_database():
-    with DatabaseManager(constants.DB_PATH) as db:
-        db.execute_script(constants.INITIAL_DB_SCHEME)
-        print("Database initialized")
+    for year in appstate.get_years():
+        with DatabaseManager(appstate.get_db_path(year)) as db:
+            db.execute_script(constants.INITIAL_DB_SCHEME)
+    print("Databases initialized for years:", ", ".join(str(y) for y in appstate.get_years()))
 
 
 def main(page: ft.Page):
@@ -55,77 +57,122 @@ def main(page: ft.Page):
             page.navigate(route)
         return handler
 
-    # Every route change rebuilds the views from scratch, so each page gets a
-    # fresh instance (its state resets every time you enter it).
-    def route_change(e: ft.RouteChangeEvent = None):
-        page.views.clear()
+    def handle_year_change(year: int):
+        appstate.set_active_year(year)
+        page.navigate("/")
 
-        # Landing view with a button for every section.
-        page.views.append(
-            ft.View(
-                route="/",
-                controls=[
-                    make_app_bar("Jouduto"),
-                    ft.SafeArea(
-                        expand=True,
-                        content=ft.Column(
-                            expand=True,
-                            controls=[
-                                HomePage(),
-                                ft.Divider(),
-                                ft.Text(
-                                    "Navigate",
-                                    theme_style=ft.TextThemeStyle.TITLE_MEDIUM,
-                                ),
-                                ft.Row(
-                                    wrap=True,
-                                    spacing=10,
-                                    controls=[
-                                        ft.Button(
-                                            content=route_info.title,
-                                            icon=ft.Icons.ARROW_FORWARD,
-                                            on_click=make_nav_handler(route_info.route),
-                                        )
-                                        for route_info in routes
-                                        if route_info.route != "/"
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ),
-                ],
-            )
+    # Stack shapes: [Home] -> [Home, Section] -> [Home, Section, ItemDetails].
+    # Views are reconciled (never wiped blindly) so item-details opens ON TOP
+    # of the Items page, and backing out returns to the same Items instance
+    # with its state (scroll, selection, search, sort) intact.
+    home_view = None  # built once, reused as the stable root of the stack
+
+    def make_view(route: str, title: str, content: ft.Control) -> ft.View:
+        return ft.View(
+            route=route,
+            controls=[
+                make_app_bar(title),
+                ft.SafeArea(expand=True, content=content),
+            ],
         )
 
-        current = pages_by_route.get(page.route.split("?", 1)[0])
-        if current is not None and current.route != "/":
-            content = current.page_type()
-            if current.route == "/item-details":
-                query = urllib.parse.parse_qs(page.route.split("?", 1)[1]) if "?" in page.route else {}
-                item_param = query.get("item")
-                if item_param:
-                    try:
-                        content.open_focused_item(int(item_param[0]))
-                    except ValueError:
-                        pass
-            page.views.append(
-                ft.View(
-                    route=page.route,
-                    controls=[
-                        make_app_bar(current.title),
-                        ft.SafeArea(expand=True, content=content),
-                    ],
-                )
-            )
+    def make_home_view() -> ft.View:
+        return ft.View(
+            route="/",
+            controls=[
+                make_app_bar("Jouduto"),
+                ft.SafeArea(
+                    expand=True,
+                    content=ft.Column(
+                        expand=True,
+                        controls=[
+                            HomePage(on_year_change=handle_year_change),
+                            ft.Divider(),
+                            ft.Text(
+                                "Navigate",
+                                theme_style=ft.TextThemeStyle.TITLE_MEDIUM,
+                            ),
+                            ft.Row(
+                                wrap=True,
+                                spacing=10,
+                                controls=[
+                                    ft.Button(
+                                        content=route_info.title,
+                                        icon=ft.Icons.ARROW_FORWARD,
+                                        on_click=make_nav_handler(route_info.route),
+                                    )
+                                    for route_info in routes
+                                    if route_info.route != "/"
+                                ],
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
 
+    def base_route(route: str) -> str:
+        return route.split("?", 1)[0]
+
+    def route_change(e: ft.RouteChangeEvent = None):
+        nonlocal home_view
+        if home_view is None:
+            home_view = make_home_view()
+
+        route = page.route
+        base = base_route(route)
+        old = list(page.views)
+
+        if base == "/":
+            page.views.clear()
+            page.views.append(home_view)
+            page.update()
+            return
+
+        current = pages_by_route.get(base)
+        if current is None:
+            return
+
+        if base == "/item-details":
+            # Keep the layers beneath (e.g. Items) so backing out restores them.
+            prefix = [v for v in old if base_route(v.route) != "/item-details"]
+            if not prefix or all(base_route(v.route) == "/" for v in prefix):
+                prefix = [home_view]
+
+            content = current.page_type()
+            query = urllib.parse.parse_qs(page.route.split("?", 1)[1]) if "?" in page.route else {}
+            item_param = query.get("item")
+            if item_param:
+                try:
+                    content.open_focused_item(int(item_param[0]))
+                except ValueError:
+                    pass
+
+            page.views.clear()
+            page.views.extend(prefix)
+            page.views.append(make_view(route, current.title, content))
+            page.update()
+            return
+
+        # Regular section page: [Home, Section]. Reuse a section view already
+        # in the stack so its state survives (items page during a round-trip).
+        section_view = next(
+            (v for v in old if base_route(v.route) == base),
+            None,
+        )
+        if section_view is None:
+            section_view = make_view(base, current.title, current.page_type())
+
+        page.views.clear()
+        page.views.append(home_view)
+        page.views.append(section_view)
         page.update()
 
-    async def view_pop(e: ft.ViewPopEvent):
-        if e.view is not None:
-            print("View pop:", e.view)
-            page.views.remove(e.view)
+    def view_pop(e: ft.ViewPopEvent):
+        if len(page.views) > 1:
+            page.views.pop()
             top_view = page.views[-1]
-            await page.push_route(top_view.route)
+            page.navigate(top_view.route)
 
     page.on_route_change = route_change
     page.on_view_pop = view_pop

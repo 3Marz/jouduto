@@ -1,7 +1,6 @@
 
 import sqlite3
 
-from constants import DB_PATH
 from database import DatabaseManager
 from datatypes import Item
 
@@ -130,14 +129,14 @@ class ItemDetailsPage(ft.Container):
         self.update()
 
     def get_items(self) -> list[Item]:
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             rows = db.fetch_all(
                 "SELECT item_id, item_code, item_name FROM items ORDER BY item_code"
             )
         return [Item(r["item_id"], r["item_code"], r["item_name"]) for r in rows]
 
     def build_distributor_options(self) -> list[ft.DropdownOption]:
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             distros = db.fetch_all(
                 "SELECT distributor_id, distributor_name FROM distributors "
                 "ORDER BY distributor_name"
@@ -232,7 +231,7 @@ class ItemDetailsPage(ft.Container):
         return True
 
     def load_item_details(self, item_id: int):
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             inv = db.fetch_one(
                 "SELECT * FROM inventory WHERE item_id = ?", (item_id,)
             )
@@ -299,7 +298,7 @@ class ItemDetailsPage(ft.Container):
         distributor_value = self.distributor_dropdown.value
 
         try:
-            with DatabaseManager(DB_PATH) as db:
+            with DatabaseManager() as db:
                 db.execute_query(
                     "UPDATE items SET item_name = ? WHERE item_id = ?",
                     (name, self.selected_item_id),

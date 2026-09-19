@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import constants
+import appstate
 from database import DatabaseManager
 
 
@@ -147,7 +148,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Seed the Jouduto database with sample data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--db", default=constants.DB_PATH, help="database file path")
+    parser.add_argument(
+        "--db",
+        default=appstate.get_db_path(),
+        help="database file path (defaults to the active year's DB)",
+    )
     parser.add_argument(
         "--reset",
         action="store_true",

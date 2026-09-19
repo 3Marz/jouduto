@@ -1,7 +1,6 @@
 
 import sqlite3
 
-from constants import DB_PATH
 from database import DatabaseManager
 import flet as ft
 
@@ -77,7 +76,7 @@ class DistributorsPage(ft.Container):
         if not self.create_distributor_name: return
 
         try:
-            with DatabaseManager(DB_PATH) as db:
+            with DatabaseManager() as db:
                 db.execute_query("INSERT INTO distributors ( distributor_name ) VALUES ( ? )", ( self.create_distributor_name, ) )
 
                 self.status.value = f"Created {self.create_distributor_name}"
@@ -101,7 +100,7 @@ class DistributorsPage(ft.Container):
         self.page.pop_dialog()
 
         try:
-            with DatabaseManager(DB_PATH) as db:
+            with DatabaseManager() as db:
                 db.execute_query("DELETE FROM distributors WHERE distributor_id = ?", ( self.about_to_delete_id, ) )
 
                 self.status.value = f"Distributor Deleted"
@@ -127,7 +126,7 @@ class DistributorsPage(ft.Container):
 
     def build_distributors_view(self) -> list[ft.DataRow]:
         distros = []
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             distros = db.fetch_all("SELECT * FROM distributors")
 
         return [

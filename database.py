@@ -2,10 +2,11 @@ import sqlite3
 from typing import Optional, Any, Tuple, List, Dict
 
 from datatypes import Inventory, Item
+import appstate
 
 class DatabaseManager:
-    def __init__(self, path: str):
-        self.path = path
+    def __init__(self, path: str | None = None):
+        self.path = path if path is not None else appstate.get_db_path()
         self.conn: Optional[sqlite3.Connection] = None
         self.cur: Optional[sqlite3.Cursor] = None
 

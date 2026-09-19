@@ -2,7 +2,6 @@ import sqlite3
 from typing import Tuple
 
 from database import DatabaseManager
-from constants import DB_PATH
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -133,17 +132,17 @@ class POPage(ft.Container):
         self.reset_create_po_form()
 
     def get_distributors(self):
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             return db.fetch_all("SELECT * FROM distributors")
 
     def get_items_list(self):
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             db_items = db.fetch_all("SELECT * FROM items")
             return [Item(itm["item_id"], itm["item_code"], itm["item_name"]) for itm in db_items]
 
     def get_pos_data(self) -> list[PurchaseOrder]:
         pos = []
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             db_pos = db.fetch_all("""
                 SELECT po.*, d.distributor_name 
                 FROM purchase_orders po 
@@ -199,7 +198,7 @@ class POPage(ft.Container):
         if not self.po_number_field.value or not self.distributor_dropdown.value:
             return
 
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             if self.selected_po_id:
                 # EDIT EXISTING PO
                 db.execute_query(
@@ -260,7 +259,7 @@ class POPage(ft.Container):
         self.distributor_dropdown.value = str(po.distributor_id)
         
         # Load existing items
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             db_items = db.fetch_all("""
                 SELECT pi.item_id, i.item_name, i.item_code, pi.quantity_ordered, pi.unit_cost 
                 FROM po_items pi 
@@ -276,7 +275,7 @@ class POPage(ft.Container):
         self.refresh_po_items_preview()
 
     def receive_po(self, po: PurchaseOrder):
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             # 1. Update PO status
             db.execute_query("UPDATE purchase_orders SET status = 'RECEIVED', received_date = CURRENT_TIMESTAMP WHERE po_id = ?", (po.id,))
             
@@ -296,7 +295,7 @@ class POPage(ft.Container):
         self.po_table.update()
 
     def delete_po(self, po: PurchaseOrder):
-        with DatabaseManager(DB_PATH) as db:
+        with DatabaseManager() as db:
             # Note: Trigger only handles INSERT. We must manually reverse quantity_ordered on delete.
             items = db.fetch_all("SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (po.id,))
             for item in items:
