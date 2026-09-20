@@ -9,6 +9,54 @@ import pandas as pd
 
 from datatypes import Inventory, Item, Distributor, PurchaseOrder
 
+
+def _split_pasted_row(line: str) -> list[str]:
+    """Split a pasted row into columns: tabs preferred, whitespace as fallback."""
+    if "\t" in line:
+        return line.split("\t")
+    return line.split()
+
+
+def parse_pasted_rows(text: str) -> tuple[list[tuple[str, int, float]], list[str]]:
+    """Parse clipboard text of 'item_code <tab> qty <tab> cost' rows.
+
+    Returns (rows, problems) where problems describe malformed lines.
+    """
+    rows: list[tuple[str, int, float]] = []
+    problems: list[str] = []
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    for lineno, raw in enumerate(normalized.split("\n"), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        cols = _split_pasted_row(line)
+        if len(cols) != 3:
+            problems.append(f"Line {lineno}: expected 3 columns, got {len(cols)}")
+            continue
+        code = cols[0].strip()
+        try:
+            qty = int(cols[1].strip().replace(",", ""))
+        except ValueError:
+            problems.append(f"Line {lineno}: invalid qty '{cols[1].strip()}'")
+            continue
+        try:
+            cost = float(cols[2].strip().replace(",", ""))
+        except ValueError:
+            problems.append(f"Line {lineno}: invalid cost '{cols[2].strip()}'")
+            continue
+        if qty <= 0:
+            problems.append(f"Line {lineno}: qty must be > 0")
+            continue
+        if cost < 0:
+            problems.append(f"Line {lineno}: cost must be >= 0")
+            continue
+        rows.append((code, qty, cost))
+    return rows, problems
+
+
+SEARCH_SUGGESTION_LIMIT = 50
+
+
 @ft.control
 class POPage(ft.Container):
     def __init__(self):
@@ -35,32 +83,82 @@ class POPage(ft.Container):
         # --- Create PO Modal ---
         self.distributor_dropdown = ft.Dropdown(
             label="Select Distributor",
+            dense=True,
+            text_size=16,
+            border_radius=12,
+            # height=50,
             options=[
                 ft.DropdownOption(key=str(d["distributor_id"]), text=d["distributor_name"])
                 for d in self.get_distributors()
             ]
         )
-        self.po_number_field = ft.TextField(label="PO Number")
-        
-        # Item Selection for New PO
-        self.item_dropdown = ft.Dropdown(
-            label="Select Item",
-            expand=True,
-            options=[
-                ft.DropdownOption(key=str(i.id), text=f"{i.code} - {i.name}")
-                for i in self.get_items_list()
-            ]
+        self.po_number_field = ft.TextField(
+            label="PO Number",
+            dense=True,
+            text_size=21,
+            border_radius=12,
         )
-        self.qty_field = ft.TextField(label="Qty", width=100, value="1")
-        self.cost_field = ft.TextField(label="Unit Cost", width=120, value="0.0")
         
-        self.po_items_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, height=200)
+        # Item Selection for New PO: searchable (avoids loading the full catalog into a Dropdown)
+        self.items: list[Item] = self.get_items_list()
+        self.selected_item_id: int | None = None
+        self.item_search = ft.SearchBar(
+            bar_hint_text="Search item by code or name...",
+            view_hint_text="Type an item code or name...",
+            expand=True,
+            on_change=self.handle_item_search_change,
+            on_submit=self.handle_item_search_submit,
+            on_tap=self.handle_item_search_tap,
+            controls=self.build_item_suggestion_tiles(
+                self.items[:SEARCH_SUGGESTION_LIMIT]
+            ),
+        )
+        self.qty_field = ft.TextField(
+            label="Qty", width=72, value="1",
+            dense=True, text_size=13, border_radius=12,
+        )
+        self.cost_field = ft.TextField(
+            label="Unit Cost", width=96, value="0.0",
+            dense=True, text_size=13, border_radius=12,
+        )
+        
+        self.po_items_placeholder = ft.Text(
+            "No items added yet",
+            italic=True,
+            margin=ft.Margin.all(12),
+            color=ft.Colors.with_opacity(0.6, ft.Colors.ON_SURFACE),
+        )
+        self.po_items_table = fdt.DataTable2(
+            expand=True,
+            heading_row_color=ft.Colors.SURFACE_CONTAINER,
+            columns=[
+                fdt.DataColumn2(fixed_width=120, label=ft.Text("Code")),
+                fdt.DataColumn2(label=ft.Text("Name")),
+                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Unit Cost"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Actions")),
+            ],
+            rows=[],
+        )
+        self.po_items_list = ft.Container(
+            expand=True,
+            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            border_radius=12,
+            content=ft.Column(
+                controls=[
+                    self.po_items_table,
+                    self.po_items_placeholder,
+                ],
+            ),
+        )
         self.current_po_items: list[dict] = []
         self.add_item_error_text = ft.Text("", color=ft.Colors.ERROR)
 
         def add_item_to_po(e):
             self.add_item_error_text.value = ""
-            if not self.item_dropdown.value:
+            if self.selected_item_id is None:
+                self.add_item_error_text.value = "Select an item first"
+                self.add_item_error_text.update()
                 return
             try:
                 qty = int(self.qty_field.value)
@@ -73,7 +171,9 @@ class POPage(ft.Container):
                 self.add_item_error_text.value = "Qty must be > 0 and Unit Cost >= 0"
                 self.add_item_error_text.update()
                 return
-            item = next(i for i in self.get_items_list() if str(i.id) == self.item_dropdown.value)
+            item = next((i for i in self.items if i.id == self.selected_item_id), None)
+            if item is None:
+                return
             self.current_po_items.append({
                 "item_id": item.id,
                 "code": item.code,
@@ -83,19 +183,79 @@ class POPage(ft.Container):
             })
             self.refresh_po_items_preview()
 
-        self.add_item_btn = ft.IconButton(icon=ft.Icons.ADD_CIRCLE, on_click=add_item_to_po)
+        self.add_item_btn = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE,
+            icon_size=24,
+            width=40,
+            height=40,
+            on_click=add_item_to_po,
+        )
+
+        # --- Paste-from-Excel import ---
+        self.paste_button = ft.Button(
+            "Paste from Excel",
+            icon=ft.Icons.CONTENT_PASTE,
+            height=32,
+            on_click=self.handle_paste_excel,
+        )
+        self.paste_field = ft.TextField(
+            label="Pasted rows (item_code, qty, cost)",
+            hint_text="Ctrl+V rows copied from Excel here, then press 'Add to Order'",
+            multiline=True,
+            min_lines=3,
+            max_lines=8,
+            expand=True,
+            dense=True,
+            text_size=13,
+            border_radius=12,
+        )
+        self.paste_status = ft.Text("", size=12)
+        self.paste_panel = ft.Column(
+            visible=False,
+            spacing=6,
+            controls=[
+                self.paste_field,
+                ft.Row(
+                    controls=[
+                        ft.Button(
+                            "Add to Order",
+                            icon=ft.Icons.ADD,
+                            height=32,
+                            on_click=self.add_pasted_items,
+                        ),
+                        ft.TextButton("Clear", on_click=self.clear_paste),
+                    ],
+                ),
+            ],
+        )
 
         self.create_po_modal = ft.AlertDialog(
-            title=ft.Text("Purchase Order"),
+            title=ft.Text("Add/Edit Purchase Orders", weight=ft.FontWeight.BOLD),
             content=ft.Column([
-                self.po_number_field,
-                self.distributor_dropdown,
+                ft.Row(
+                    controls=[
+                        self.po_number_field,
+                        self.distributor_dropdown,
+                    ]
+                ),
                 ft.Divider(),
-                ft.Text("Items", weight=ft.FontWeight.BOLD),
-                ft.Row([self.item_dropdown, self.qty_field, self.cost_field, self.add_item_btn]),
-                self.add_item_error_text,
+                ft.Text("Items", weight=ft.FontWeight.BOLD, size=14),
+                ft.Row(
+                    [self.item_search, self.qty_field, self.cost_field, self.add_item_btn],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    controls=[
+                        self.paste_button,
+                        self.paste_status,
+                        self.add_item_error_text,
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                self.paste_panel,
                 self.po_items_list,
-            ], tight=True, width=600),
+            ], tight=True, width=840, height=520),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog()),
                 ft.ElevatedButton("Save PO", on_click=self.save_po),
@@ -179,12 +339,27 @@ class POPage(ft.Container):
         ]
 
     def refresh_po_items_preview(self):
-        self.po_items_list.controls = [
-            ft.Row([
-                ft.Text(f"{item['code']} - {item['name']} x{item['qty']} @ {item['cost']}"),
-                ft.IconButton(ft.Icons.CLOSE, on_click=lambda e, i=idx: self.remove_item_from_po(i))
-            ]) for idx, item in enumerate(self.current_po_items)
+        self.po_items_table.rows = [
+            ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(item["code"])),
+                    ft.DataCell(ft.Text(item["name"])),
+                    ft.DataCell(ft.Text(str(item["qty"]))),
+                    ft.DataCell(ft.Text(str(item["cost"]))),
+                    ft.DataCell(
+                        ft.IconButton(
+                            ft.Icons.CLOSE,
+                            icon_size=18,
+                            icon_color=ft.Colors.ERROR,
+                            tooltip="Remove",
+                            on_click=lambda e, i=idx: self.remove_item_from_po(i),
+                        )
+                    ),
+                ]
+            )
+            for idx, item in enumerate(self.current_po_items)
         ]
+        self.po_items_placeholder.visible = not self.current_po_items
         self.po_items_list.update()
         # Visual cleanup: update the modal to reflect changes in controls
         self.create_po_modal.update()
@@ -192,6 +367,166 @@ class POPage(ft.Container):
     def remove_item_from_po(self, index):
         self.current_po_items.pop(index)
         self.refresh_po_items_preview()
+
+    def handle_paste_excel(self, e):
+        self.paste_panel.visible = True
+        text = ""
+        clipboard_read = False
+        try:
+            import pyperclip
+            text = pyperclip.paste() or ""
+            clipboard_read = True
+        except Exception:
+            pass
+
+        self.paste_field.value = text.strip()
+        if text.strip():
+            self.paste_status.value = "Clipboard loaded. Review then press 'Add to Order'."
+            self.paste_status.color = ft.Colors.GREEN
+        elif clipboard_read:
+            self.paste_status.value = (
+                "Clipboard is empty or has no text — Ctrl+V into the box, then 'Add to Order'."
+            )
+            self.paste_status.color = ft.Colors.ERROR
+        else:
+            self.paste_status.value = (
+                "Could not read the clipboard — Ctrl+V into the box, then 'Add to Order'."
+            )
+            self.paste_status.color = ft.Colors.ERROR
+        self.create_po_modal.update()
+
+    def add_pasted_items(self, e):
+        rows, problems = parse_pasted_rows(self.paste_field.value or "")
+
+        self.paste_panel.visible = False
+
+        if not rows:
+            self.paste_status.value = (
+                "Nothing to add. " + ("; ".join(problems[:3]) if problems else "No valid rows found.")
+            )
+            self.paste_status.color = ft.Colors.ERROR
+            self.paste_status.update()
+            self.create_po_modal.update()
+            return
+
+        with DatabaseManager() as db:
+            db_items = db.fetch_all(
+                "SELECT item_id, item_code, item_name FROM items"
+            )
+        by_code = {it["item_code"]: it for it in db_items}
+        by_code_lower = {it["item_code"].lower(): it for it in db_items}
+
+        added = 0
+        unknown: list[str] = []
+        by_id: dict[int, dict] = {}
+        for code, qty, cost in rows:
+            item = by_code.get(code) or by_code_lower.get(code.lower())
+            if item is None:
+                unknown.append(code)
+                continue
+            item_id = item["item_id"]
+            if item_id in by_id:
+                by_id[item_id]["qty"] += qty
+                by_id[item_id]["cost"] = cost
+            else:
+                by_id[item_id] = {
+                    "item_id": item_id,
+                    "code": item["item_code"],
+                    "name": item["item_name"],
+                    "qty": qty,
+                    "cost": cost,
+                }
+            added += 1
+
+        self.current_po_items.extend(by_id.values())
+        self.refresh_po_items_preview()
+
+        messages: list[str] = [f"Added {added} row(s)."]
+        if unknown:
+            messages.append(f"Unknown codes: {', '.join(sorted(set(unknown)))}")
+        if problems:
+            messages.append("; ".join(problems[:3]))
+        if len(problems) > 3:
+            messages.append(f"...and {len(problems) - 3} more problem line(s).")
+        self.paste_status.value = " ".join(messages)
+        self.paste_status.color = ft.Colors.ERROR if (unknown or problems) else ft.Colors.GREEN
+        self.paste_status.update()
+        self.create_po_modal.update()
+
+    def clear_paste(self, e):
+        self.paste_field.value = ""
+        self.paste_status.value = ""
+        self.paste_panel.visible = False
+        self.create_po_modal.update()
+
+    # --- Searchable item picker (like the item-details page) ---
+    def build_item_suggestion_tiles(self, items: list[Item]) -> list[ft.ListTile]:
+        return [
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.INVENTORY_2_OUTLINED),
+                title=ft.Text(f"{item.code} - {item.name}"),
+                data=item.id,
+                on_click=self.handle_item_select,
+            )
+            for item in items
+        ]
+
+    def update_item_suggestions(self, query: str):
+        query = (query or "").strip().lower()
+        if not query:
+            matches = self.items
+        else:
+            matches = [
+                item
+                for item in self.items
+                if query in item.code.lower() or query in item.name.lower()
+            ]
+        self.item_search.controls = self.build_item_suggestion_tiles(
+            matches[:SEARCH_SUGGESTION_LIMIT]
+        )
+
+    def handle_item_search_change(self, e: ft.Event[ft.SearchBar]):
+        self.update_item_suggestions(e.control.value)
+        self.item_search.update()
+
+    async def handle_item_search_tap(self, e: ft.Event[ft.SearchBar]):
+        self.update_item_suggestions(self.item_search.value)
+        self.item_search.update()
+        await self.item_search.open_view()
+
+    async def handle_item_search_submit(self, e: ft.Event[ft.SearchBar]):
+        query = (e.control.value or "").strip().lower()
+        if not query:
+            return
+        match = next(
+            (
+                item
+                for item in self.items
+                if item.code.lower() == query or item.name.lower() == query
+            ),
+            None,
+        ) or next(
+            (
+                item
+                for item in self.items
+                if query in item.code.lower() or query in item.name.lower()
+            ),
+            None,
+        )
+        if match:
+            await self.select_item_by_id(match.id)
+
+    async def handle_item_select(self, e: ft.Event[ft.ListTile]):
+        await self.select_item_by_id(e.control.data)
+
+    async def select_item_by_id(self, item_id: int):
+        item = next((item for item in self.items if item.id == item_id), None)
+        if item is None:
+            return
+        self.selected_item_id = item.id
+        self.item_search.value = f"{item.code} - {item.name}"
+        self.item_search.update()
+        await self.item_search.close_view(self.item_search.value)
 
     def save_po(self, e):
         if not self.po_number_field.value or not self.distributor_dropdown.value:
@@ -239,16 +574,20 @@ class POPage(ft.Container):
         self.selected_po_id = None
         
         # Reset item selection fields too
-        self.item_dropdown.value = None
+        self.selected_item_id = None
+        self.item_search.value = ""
         self.qty_field.value = "1"
         self.cost_field.value = "0.0"
         self.add_item_error_text.value = ""
+        self.paste_field.value = ""
+        self.paste_status.value = ""
+        self.paste_panel.visible = False
         
         self.refresh_po_items_preview()
         # Force update all form fields to clear visual state
         self.po_number_field.update()
         self.distributor_dropdown.update()
-        self.item_dropdown.update()
+        self.item_search.update()
         self.qty_field.update()
         self.cost_field.update()
 
@@ -269,7 +608,11 @@ class POPage(ft.Container):
                 {"item_id": item["item_id"], "code": item["item_code"], "name": item["item_name"], "qty": item["quantity_ordered"], "cost": item["unit_cost"]}
                 for item in db_items
             ]
-        
+
+        self.paste_field.value = ""
+        self.paste_status.value = ""
+        self.paste_panel.visible = False
+
         self.page.show_dialog(self.create_po_modal)
         self.refresh_po_items_preview()
 

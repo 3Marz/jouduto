@@ -134,7 +134,6 @@ class ItemsPage(ft.Container):
             content=ft.GestureDetector(
                 on_secondary_tap_down=lambda e: self.handle_mouse_update(e),
                 expand=True,
-                on_scroll=self.handle_table_scroll,
                 content=self.table,
             ),
         )
@@ -494,15 +493,6 @@ class ItemsPage(ft.Container):
 
         self.table.update()
         self.update_pagination_controls()
-
-    def handle_table_scroll(self, e: ft.ScrollEvent):
-        delta = e.scroll_delta
-        if delta is None or delta.y <= 0:
-            return
-        self.scroll_accumulator += delta.y
-        if self.scroll_accumulator >= SCROLL_LOAD_THRESHOLD:
-            self.scroll_accumulator = 0.0
-            self.load_more()
 
     def handle_mouse_update(self, e: ft.TapEvent):
         self.mouse_pos = e.global_position
