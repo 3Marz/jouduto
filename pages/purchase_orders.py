@@ -703,8 +703,6 @@ class POPage(ft.Container):
         self.refresh_po_items_preview()
 
     def open_po_viewer(self, po: PurchaseOrder):
-        self.page.show_dialog(self.view_po_modal)
-
         self.view_po_number.value = po.po_number
         self.view_po_distributor.value = po.distributor_name
         self.view_po_date.value = po.order_date or "—"
@@ -733,12 +731,8 @@ class POPage(ft.Container):
         ]
         self.view_po_total.value = f"{sum(r['quantity_ordered'] * r['unit_cost'] for r in rows):.2f}"
 
-        self.view_po_total.update()
-        self.view_po_table.update()
-        self.view_po_number.update()
-        self.view_po_distributor.update()
-        self.view_po_date.update()
-        self.view_po_status.update()
+        self.page.show_dialog(self.view_po_modal)
+
 
     def mark_po_ordered(self, po: PurchaseOrder):
         with DatabaseManager() as db:
