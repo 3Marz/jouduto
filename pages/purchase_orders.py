@@ -108,7 +108,6 @@ class POPage(ft.Container):
                 controls=[
                     ft.Row(
                         controls=[
-                            ft.Text("Purchase Orders", size=30, weight=ft.FontWeight.BOLD),
                             ft.Button(
                                 "New PO", 
                                 icon=ft.Icons.ADD, 

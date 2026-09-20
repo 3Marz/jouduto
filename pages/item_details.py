@@ -110,7 +110,6 @@ class ItemDetailsPage(ft.Container):
                 controls=[
                     ft.Column(
                         controls=[
-                            ft.Text("Item Details", size=30, weight=ft.FontWeight.BOLD),
                             self.search_bar
                         ]
                     ),

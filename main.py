@@ -55,7 +55,12 @@ def main(page: ft.Page):
     def make_app_bar(title: str) -> ft.AppBar:
         year = appstate.get_active_year()
         return ft.AppBar(
-            title=ft.Text(title),
+            title=ft.Text(
+                title,
+                italic=True,
+                weight=ft.FontWeight.W_900,
+                theme_style=ft.TextThemeStyle.TITLE_LARGE
+            ),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
             actions=[
                 ft.Container(
