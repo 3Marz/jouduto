@@ -130,19 +130,23 @@ class POPage(ft.Container):
         )
         self.po_items_table = fdt.DataTable2(
             expand=True,
+            column_spacing=40,
+            horizontal_margin=8,
+            heading_row_height=34,
             heading_row_color=ft.Colors.SURFACE_CONTAINER,
             columns=[
-                fdt.DataColumn2(fixed_width=120, label=ft.Text("Code")),
-                fdt.DataColumn2(label=ft.Text("Name")),
-                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True),
-                fdt.DataColumn2(label=ft.Text("Unit Cost"), numeric=True),
-                fdt.DataColumn2(label=ft.Text("Actions")),
+                fdt.DataColumn2(fixed_width=130, label=ft.Text("Code")),
+                fdt.DataColumn2(fixed_width=300, label=ft.Text("Name")),
+                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True, heading_row_alignment=ft.MainAxisAlignment.START),
+                fdt.DataColumn2(label=ft.Text("Unit Cost"), heading_row_alignment=ft.MainAxisAlignment.START),
+                fdt.DataColumn2(label=ft.Text("Amount"), heading_row_alignment=ft.MainAxisAlignment.START),
+                fdt.DataColumn2(fixed_width=80, label=ft.Text("Actions")),
             ],
             rows=[],
         )
         self.po_items_list = ft.Container(
             expand=True,
-            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER),
             border_radius=12,
             content=ft.Column(
                 controls=[
@@ -153,6 +157,7 @@ class POPage(ft.Container):
         )
         self.current_po_items: list[dict] = []
         self.add_item_error_text = ft.Text("", color=ft.Colors.ERROR)
+        self.po_items_total = ft.Text("", size=18, weight=ft.FontWeight.W_600)
 
         def add_item_to_po(e):
             self.add_item_error_text.value = ""
@@ -234,9 +239,15 @@ class POPage(ft.Container):
             content=ft.Column([
                 ft.Row(
                     controls=[
-                        self.po_number_field,
-                        self.distributor_dropdown,
-                    ]
+                        ft.Row([
+                            self.po_number_field,
+                            self.distributor_dropdown,
+                        ]),
+                        ft.Row([
+                            ft.Text("Total : ", weight=ft.FontWeight.BOLD),
+                            self.po_items_total,
+                        ]),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN
                 ),
                 ft.Divider(),
                 ft.Text("Items", weight=ft.FontWeight.BOLD, size=14),
@@ -267,14 +278,14 @@ class POPage(ft.Container):
         self.view_po_number = ft.Text("", size=13)
         self.view_po_distributor = ft.Text("", size=13)
         self.view_po_date = ft.Text("", size=13)
-        self.view_po_total = ft.Text("", size=13, weight=ft.FontWeight.BOLD)
+        self.view_po_total = ft.Text("", size=18, weight=ft.FontWeight.W_700)
         self.view_po_table = fdt.DataTable2(
             columns=[
                 fdt.DataColumn2(label=ft.Text("Code")),
-                fdt.DataColumn2(label=ft.Text("Name")),
-                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True),
-                fdt.DataColumn2(label=ft.Text("Unit Cost"), numeric=True),
-                fdt.DataColumn2(label=ft.Text("Amount"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Name"), fixed_width=300),
+                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True, heading_row_alignment=ft.MainAxisAlignment.START),
+                fdt.DataColumn2(label=ft.Text("Unit Cost"), heading_row_alignment=ft.MainAxisAlignment.START),
+                fdt.DataColumn2(label=ft.Text("Amount"), heading_row_alignment=ft.MainAxisAlignment.START),
             ],
             rows=[],
             expand=True,
@@ -438,7 +449,8 @@ class POPage(ft.Container):
                     ft.DataCell(ft.Text(item["code"])),
                     ft.DataCell(ft.Text(item["name"])),
                     ft.DataCell(ft.Text(str(item["qty"]))),
-                    ft.DataCell(ft.Text(str(item["cost"]))),
+                    ft.DataCell(ft.Text("$ "+str(item["cost"]))),
+                    ft.DataCell(ft.Text("$ "+str(round(item["qty"] * item["cost"], 2)))),
                     ft.DataCell(
                         ft.IconButton(
                             ft.Icons.CLOSE,
@@ -452,6 +464,10 @@ class POPage(ft.Container):
             )
             for idx, item in enumerate(self.current_po_items)
         ]
+
+        self.po_items_total.value = f"$ {sum(r['qty'] * r['cost'] for r in self.current_po_items):.4f}"
+        self.po_items_total.update()
+
         self.po_items_placeholder.visible = not self.current_po_items
         self.po_items_list.update()
         # Visual cleanup: update the modal to reflect changes in controls
@@ -698,6 +714,7 @@ class POPage(ft.Container):
         self.paste_field.value = ""
         self.paste_status.value = ""
         self.paste_panel.visible = False
+        self.view_po_total.value =  "" 
 
         self.page.show_dialog(self.create_po_modal)
         self.refresh_po_items_preview()
@@ -723,13 +740,13 @@ class POPage(ft.Container):
                     ft.DataCell(ft.Text(r["item_code"])),
                     ft.DataCell(ft.Text(r["item_name"])),
                     ft.DataCell(ft.Text(str(r["quantity_ordered"]))),
-                    ft.DataCell(ft.Text(str(r["unit_cost"]))),
-                    ft.DataCell(ft.Text(str(round(r["quantity_ordered"] * r["unit_cost"], 2)))),
+                    ft.DataCell(ft.Text("$ "+str(r["unit_cost"]))),
+                    ft.DataCell(ft.Text("$ "+str(round(r["quantity_ordered"] * r["unit_cost"], 2)))),
                 ]
             )
             for r in rows
         ]
-        self.view_po_total.value = f"{sum(r['quantity_ordered'] * r['unit_cost'] for r in rows):.2f}"
+        self.view_po_total.value = f"$ {sum(r['quantity_ordered'] * r['unit_cost'] for r in rows):.4f}"
 
         self.page.show_dialog(self.view_po_modal)
 
