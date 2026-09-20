@@ -38,8 +38,8 @@ DISTRIBUTOR_NAMES = [
     "Acme Supply", "Global Parts", "Nova Trading", "Orion Distribution",
     "Pioneer Wholesale", "Summit Goods", "Vertex Supply", "Zenith Traders",
 ]
-STATUSES = ["ORDERED", "RECEIVED", "CANCELLED"]
-STATUS_WEIGHTS = [0.6, 0.3, 0.1]
+STATUSES = ["ORDERED", "DRAFT"]
+STATUS_WEIGHTS = [0.7, 0.3]
 
 
 def has_data(db: DatabaseManager) -> bool:
@@ -95,22 +95,16 @@ def seed(db: DatabaseManager, rng: random.Random, args: argparse.Namespace) -> N
         status = rng.choices(STATUSES, weights=STATUS_WEIGHTS)[0]
         order_dt = now - timedelta(days=rng.randint(0, 365))
         expected_dt = order_dt + timedelta(days=rng.randint(3, 30))
-        received_date = (
-            (order_dt + timedelta(days=rng.randint(1, 30))).isoformat(sep=" ")
-            if status == "RECEIVED"
-            else None
-        )
         db.execute_query(
             "INSERT INTO purchase_orders "
-            "(po_number, distributor_id, status, order_date, expected_date, received_date, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(po_number, distributor_id, status, order_date, expected_date, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 f"PO-{order_dt.year}-{i + 1:04d}",
                 rng.choice(distributor_ids),
                 status,
                 order_dt.isoformat(sep=" "),
                 expected_dt.isoformat(sep=" "),
-                received_date,
                 None,
             ),
         )
@@ -125,19 +119,10 @@ def seed(db: DatabaseManager, rng: random.Random, args: argparse.Namespace) -> N
                 "VALUES (?, ?, ?, ?)",
                 (po_id, item_id, qty, unit_cost),
             )
-            # The INSERT trigger already added qty to inventory.quantity_ordered;
-            # adjust so received/cancelled POs don't leave phantom outstanding stock.
-            if status == "RECEIVED":
+            # Only placed (ORDERED) POs reserve quantity_ordered in inventory.
+            if status == "ORDERED":
                 db.execute_query(
-                    "UPDATE inventory "
-                    "SET quantity_available = quantity_available + ?, "
-                    "    quantity_ordered = quantity_ordered - ? "
-                    "WHERE item_id = ?",
-                    (qty, qty, item_id),
-                )
-            elif status == "CANCELLED":
-                db.execute_query(
-                    "UPDATE inventory SET quantity_ordered = quantity_ordered - ? "
+                    "UPDATE inventory SET quantity_ordered = quantity_ordered + ? "
                     "WHERE item_id = ?",
                     (qty, item_id),
                 )

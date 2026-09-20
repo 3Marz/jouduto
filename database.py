@@ -4,6 +4,48 @@ from typing import Optional, Any, Tuple, List, Dict
 from datatypes import Inventory, Item
 import appstate
 
+# One-time migration: collapse PO statuses to DRAFT/ORDERED. Existing databases
+# created before this change used ORDERED/RECEIVED/CANCELLED (plus an INSERT
+# trigger that reserved quantity_ordered). Rebuilt the purchase_orders table so
+# the CHECK/DEFAULT reflect the new concept and drop the now-unused trigger.
+_OLD_PO_TRIGGER = "trg_po_item_inserted"
+
+
+def migrate_po_statuses(db):
+    """Ensure purchase_orders uses only DRAFT/ORDERED; no-op if already new."""
+    table = db.fetch_one(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_orders'"
+    )
+    create_sql = (table or {}).get("sql") or ""
+    if "RECEIVED" not in create_sql:
+        return
+
+    db.execute_script(f"""
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE purchase_orders RENAME TO purchase_orders_legacy;
+        DROP TRIGGER IF EXISTS {_OLD_PO_TRIGGER};
+        CREATE TABLE purchase_orders (
+            po_id INTEGER PRIMARY KEY,
+            po_number TEXT NOT NULL UNIQUE,
+            distributor_id INTEGER NOT NULL,
+            status TEXT CHECK(status IN ('DRAFT', 'ORDERED')) DEFAULT 'DRAFT',
+            order_date TEXT DEFAULT CURRENT_TIMESTAMP,
+            expected_date TEXT,
+            received_date TEXT,
+            notes TEXT,
+            FOREIGN KEY (distributor_id) REFERENCES distributors(distributor_id) ON DELETE RESTRICT
+        );
+        INSERT INTO purchase_orders
+            (po_id, po_number, distributor_id, status, order_date, expected_date, received_date, notes)
+        SELECT po_id, po_number, distributor_id,
+               CASE WHEN status = 'ORDERED' THEN 'ORDERED'
+                    WHEN status = 'RECEIVED' THEN 'ORDERED'
+                    ELSE 'DRAFT' END,
+               order_date, expected_date, received_date, notes
+        FROM purchase_orders_legacy;
+        DROP TABLE purchase_orders_legacy;
+    """)
+
 class DatabaseManager:
     def __init__(self, path: str | None = None):
         self.path = path if path is not None else appstate.get_db_path()

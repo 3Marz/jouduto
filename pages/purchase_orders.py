@@ -262,6 +262,69 @@ class POPage(ft.Container):
             ]
         )
 
+        # Read-only view of a PO (no editing, no inventory changes)
+        self.view_po_status = ft.Text("")
+        self.view_po_number = ft.Text("", size=13)
+        self.view_po_distributor = ft.Text("", size=13)
+        self.view_po_date = ft.Text("", size=13)
+        self.view_po_total = ft.Text("", size=13, weight=ft.FontWeight.BOLD)
+        self.view_po_table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("Code")),
+                ft.DataColumn(ft.Text("Name")),
+                ft.DataColumn(ft.Text("Qty"), numeric=True),
+                ft.DataColumn(ft.Text("Unit Cost"), numeric=True),
+                ft.DataColumn(ft.Text("Amount"), numeric=True),
+            ],
+            rows=[],
+            column_spacing=40,
+            horizontal_margin=8,
+            heading_row_height=34,
+            data_row_min_height=36,
+            data_row_max_height=36,
+        )
+
+        def view_row(label: str, value: ft.Control) -> ft.Row:
+            return ft.Row(
+                [
+                    ft.Text(label, weight=ft.FontWeight.W_600, size=13, width=110),
+                    value,
+                ],
+                spacing=8,
+            )
+
+        self.view_po_modal = ft.AlertDialog(
+            title=ft.Text("Purchase Order Details"),
+            content=ft.Column([
+                ft.Container(
+                    content=self.view_po_status,
+                    padding=(2, 8),
+                    border_radius=10,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    width=90,
+                ),
+                view_row("PO Number", self.view_po_number),
+                view_row("Distributor", self.view_po_distributor),
+                view_row("Order Date", self.view_po_date),
+                ft.Divider(),
+                ft.Text("Items", weight=ft.FontWeight.BOLD, size=14),
+                ft.Container(
+                    height=260,
+                    content=ft.Column(
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[self.view_po_table],
+                    ),
+                ),
+                ft.Row([
+                    ft.Text("Total", weight=ft.FontWeight.BOLD),
+                    self.view_po_total,
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ], tight=True, width=840, height=520),
+            actions=[
+                ft.TextButton("Close", on_click=lambda _: self.page.pop_dialog()),
+            ],
+        )
+
         self.content = ft.SafeArea(
             content=ft.Column(
                 expand=True,
@@ -327,16 +390,45 @@ class POPage(ft.Container):
                 cells=[
                     ft.DataCell(ft.Text(po.po_number)),
                     ft.DataCell(ft.Text(po.distributor_name)),
-                    ft.DataCell(ft.Text(po.status)),
-                    ft.DataCell(ft.Text(po.order_date)),
-                    ft.DataCell(ft.Row([
-                        ft.IconButton(ft.Icons.EDIT, tooltip="Edit", on_click=lambda e, p=po: self.open_po_editor(p)),
-                        ft.IconButton(ft.Icons.CHECK_CIRCLE, icon_color="green", tooltip="Receive", on_click=lambda e, p=po: self.receive_po(p)),
-                        ft.IconButton(ft.Icons.DELETE, icon_color="red", tooltip="Delete", on_click=lambda e, p=po: self.delete_po(p)),
-                    ])),
+                    ft.DataCell(ft.Text(
+                        po.status,
+                        color=ft.Colors.GREEN if po.status == "ORDERED" else ft.Colors.GREY
+                    )),
+                    ft.DataCell(ft.Text(po.order_date or "-")),
+                    ft.DataCell(ft.Row(self._po_actions(po))),
                 ]
             ) for po in self.pos
         ]
+
+    def _po_actions(self, po: PurchaseOrder) -> list[ft.Control]:
+        actions = [
+            ft.IconButton(ft.Icons.VISIBILITY, tooltip="View",
+                          on_click=lambda e, p=po: self.open_po_viewer(p))
+        ]
+        if po.status == "DRAFT":
+            actions.append(
+                ft.IconButton(ft.Icons.EDIT, tooltip="Edit",
+                              on_click=lambda e, p=po: self.open_po_editor(p))
+            )
+            actions.append(
+                ft.IconButton(ft.Icons.CHECK_CIRCLE, icon_color="green", tooltip="Place Order",
+                              on_click=lambda e, p=po: self.mark_po_ordered(p))
+            )
+        else:
+            actions.append(
+                ft.IconButton(ft.Icons.UNDO, tooltip="Revert to Draft",
+                              on_click=lambda e, p=po: self.revert_po_to_draft(p))
+            )
+        actions.append(
+            ft.IconButton(ft.Icons.DELETE, icon_color="red", tooltip="Delete",
+                          on_click=lambda e, p=po: self.delete_po(p))
+        )
+        return actions
+
+    def refresh_po_table(self):
+        self.pos = self.get_pos_data()
+        self.po_table.rows = self.build_po_rows()
+        self.po_table.update()
 
     def refresh_po_items_preview(self):
         self.po_items_table.rows = [
@@ -534,23 +626,18 @@ class POPage(ft.Container):
 
         with DatabaseManager() as db:
             if self.selected_po_id:
-                # EDIT EXISTING PO
+                # EDIT EXISTING DRAFT
                 db.execute_query(
                     "UPDATE purchase_orders SET po_number = ?, distributor_id = ? WHERE po_id = ?",
                     (self.po_number_field.value, self.distributor_dropdown.value, self.selected_po_id)
                 )
-                # To simplify item editing, we remove old items and re-insert them
-                # IMPORTANT: We must reverse the inventory order count first
-                old_items = db.fetch_all("SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (self.selected_po_id,))
-                for old in old_items:
-                    db.execute_query("UPDATE inventory SET quantity_ordered = quantity_ordered - ? WHERE item_id = ?", (old["quantity_ordered"], old["item_id"]))
-                
+                # Draft POs don't touch inventory, so we can simply replace the lines.
                 db.execute_query("DELETE FROM po_items WHERE po_id = ?", (self.selected_po_id,))
                 po_id = self.selected_po_id
             else:
-                # CREATE NEW PO
+                # CREATE NEW PO (starts as a Draft; ordered qty is reserved on 'Place Order')
                 db.execute_query(
-                    "INSERT INTO purchase_orders (po_number, distributor_id, status) VALUES (?, ?, 'ORDERED')",
+                    "INSERT INTO purchase_orders (po_number, distributor_id, status, order_date) VALUES (?, ?, 'DRAFT', NULL)",
                     (self.po_number_field.value, self.distributor_dropdown.value)
                 )
                 po_id = db.cur.lastrowid
@@ -564,9 +651,7 @@ class POPage(ft.Container):
 
         self.page.pop_dialog()
         self.reset_create_po_form()
-        self.pos = self.get_pos_data()
-        self.po_table.rows = self.build_po_rows()
-        self.po_table.update()
+        self.refresh_po_table()
     def reset_create_po_form(self):
         self.po_number_field.value = ""
         self.distributor_dropdown.value = None
@@ -616,40 +701,82 @@ class POPage(ft.Container):
         self.page.show_dialog(self.create_po_modal)
         self.refresh_po_items_preview()
 
-    def receive_po(self, po: PurchaseOrder):
-        with DatabaseManager() as db:
-            # 1. Update PO status
-            db.execute_query("UPDATE purchase_orders SET status = 'RECEIVED', received_date = CURRENT_TIMESTAMP WHERE po_id = ?", (po.id,))
-            
-            # 2. Fetch items and move quantity_ordered -> quantity_available
-            items = db.fetch_all("SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (po.id,))
-            for item in items:
-                # Update inventory: add to available, subtract from ordered
-                db.execute_query("""
-                    UPDATE inventory 
-                    SET quantity_available = quantity_available + ?, 
-                        quantity_ordered = quantity_ordered - ? 
-                    WHERE item_id = ?
-                """, (item["quantity_ordered"], item["quantity_ordered"], item["item_id"]))
+    def open_po_viewer(self, po: PurchaseOrder):
+        self.view_po_number.value = po.po_number
+        self.view_po_distributor.value = po.distributor_name
+        self.view_po_date.value = po.order_date or "—"
+        self.view_po_status.value = po.status
+        self.view_po_status.color = ft.Colors.GREEN if po.status == "ORDERED" else ft.Colors.GREY
 
-        self.pos = self.get_pos_data()
-        self.po_table.rows = self.build_po_rows()
-        self.po_table.update()
+        with DatabaseManager() as db:
+            rows = db.fetch_all("""
+                SELECT pi.item_id, i.item_name, i.item_code, pi.quantity_ordered, pi.unit_cost
+                FROM po_items pi
+                JOIN items i ON pi.item_id = i.item_id
+                WHERE pi.po_id = ?
+            """, (po.id,))
+
+        self.view_po_table.rows = [
+            ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(r["item_code"])),
+                    ft.DataCell(ft.Text(r["item_name"])),
+                    ft.DataCell(ft.Text(str(r["quantity_ordered"]))),
+                    ft.DataCell(ft.Text(str(r["unit_cost"]))),
+                    ft.DataCell(ft.Text(str(round(r["quantity_ordered"] * r["unit_cost"], 2)))),
+                ]
+            )
+            for r in rows
+        ]
+        self.view_po_total.value = f"{sum(r['quantity_ordered'] * r['unit_cost'] for r in rows):.2f}"
+        self.page.show_dialog(self.view_po_modal)
+
+    def mark_po_ordered(self, po: PurchaseOrder):
+        with DatabaseManager() as db:
+            # Reserve ordered quantity once the order is actually placed.
+            items = db.fetch_all(
+                "SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (po.id,)
+            )
+            for item in items:
+                db.execute_query(
+                    "UPDATE inventory SET quantity_ordered = quantity_ordered + ? WHERE item_id = ?",
+                    (item["quantity_ordered"], item["item_id"]),
+                )
+            db.execute_query(
+                "UPDATE purchase_orders SET status = 'ORDERED', order_date = COALESCE(order_date, CURRENT_TIMESTAMP) WHERE po_id = ?",
+                (po.id,),
+            )
+        self.refresh_po_table()
+
+    def revert_po_to_draft(self, po: PurchaseOrder):
+        with DatabaseManager() as db:
+            # Release the reserved ordered quantity back out.
+            items = db.fetch_all(
+                "SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (po.id,)
+            )
+            for item in items:
+                db.execute_query(
+                    "UPDATE inventory SET quantity_ordered = MAX(0, quantity_ordered - ?) WHERE item_id = ?",
+                    (item["quantity_ordered"], item["item_id"]),
+                )
+            db.execute_query(
+                "UPDATE purchase_orders SET status = 'DRAFT', order_date = NULL WHERE po_id = ?",
+                (po.id,),
+            )
+        self.refresh_po_table()
 
     def delete_po(self, po: PurchaseOrder):
         with DatabaseManager() as db:
-            # Note: Trigger only handles INSERT. We must manually reverse quantity_ordered on delete.
+            # Reverse the reserved ordered quantity (only meaningful for ORDERED POs).
             items = db.fetch_all("SELECT item_id, quantity_ordered FROM po_items WHERE po_id = ?", (po.id,))
             for item in items:
-                db.execute_query("UPDATE inventory SET quantity_ordered = quantity_ordered - ? WHERE item_id = ?", (item["quantity_ordered"], item["item_id"]))
+                db.execute_query("UPDATE inventory SET quantity_ordered = MAX(0, quantity_ordered - ?) WHERE item_id = ?", (item["quantity_ordered"], item["item_id"]))
 
             # Delete PO items first (even if CASCADE is on, explicitly doing it is safer if constraints differ)
             db.execute_query("DELETE FROM po_items WHERE po_id = ?", (po.id,))
             db.execute_query("DELETE FROM purchase_orders WHERE po_id = ?", (po.id,))
 
-        self.pos = self.get_pos_data()
-        self.po_table.rows = self.build_po_rows()
-        self.po_table.update()
+        self.refresh_po_table()
     def handle_sort(self, e: ft.DataColumnSortEvent):
         # Simplified sort for POs
         sorters = [

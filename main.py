@@ -1,4 +1,5 @@
 from database import DatabaseManager
+import database
 import constants
 import appstate
 import urllib.parse
@@ -32,6 +33,7 @@ def initialize_database():
     for year in appstate.get_years():
         with DatabaseManager(appstate.get_db_path(year)) as db:
             db.execute_script(constants.INITIAL_DB_SCHEME)
+            database.migrate_po_statuses(db)
     print("Databases initialized for years:", ", ".join(str(y) for y in appstate.get_years()))
 
 
