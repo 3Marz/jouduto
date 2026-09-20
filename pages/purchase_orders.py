@@ -268,20 +268,20 @@ class POPage(ft.Container):
         self.view_po_distributor = ft.Text("", size=13)
         self.view_po_date = ft.Text("", size=13)
         self.view_po_total = ft.Text("", size=13, weight=ft.FontWeight.BOLD)
-        self.view_po_table = ft.DataTable(
+        self.view_po_table = fdt.DataTable2(
             columns=[
-                ft.DataColumn(ft.Text("Code")),
-                ft.DataColumn(ft.Text("Name")),
-                ft.DataColumn(ft.Text("Qty"), numeric=True),
-                ft.DataColumn(ft.Text("Unit Cost"), numeric=True),
-                ft.DataColumn(ft.Text("Amount"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Code")),
+                fdt.DataColumn2(label=ft.Text("Name")),
+                fdt.DataColumn2(label=ft.Text("Qty"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Unit Cost"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Amount"), numeric=True),
             ],
             rows=[],
+            expand=True,
+            heading_row_color=ft.Colors.SURFACE_CONTAINER,
             column_spacing=40,
             horizontal_margin=8,
             heading_row_height=34,
-            data_row_min_height=36,
-            data_row_max_height=36,
         )
 
         def view_row(label: str, value: ft.Control) -> ft.Row:
@@ -295,30 +295,31 @@ class POPage(ft.Container):
 
         self.view_po_modal = ft.AlertDialog(
             title=ft.Text("Purchase Order Details"),
-            content=ft.Column([
-                ft.Container(
-                    content=self.view_po_status,
-                    padding=(2, 8),
-                    border_radius=10,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                    width=90,
-                ),
-                view_row("PO Number", self.view_po_number),
-                view_row("Distributor", self.view_po_distributor),
-                view_row("Order Date", self.view_po_date),
-                ft.Divider(),
-                ft.Text("Items", weight=ft.FontWeight.BOLD, size=14),
-                ft.Container(
-                    height=260,
-                    content=ft.Column(
-                        scroll=ft.ScrollMode.AUTO,
-                        controls=[self.view_po_table],
+            content=ft.Column(
+                controls=[
+                    ft.Container(
+                        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                        border_radius=10,
+                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                        width=90,
+                        alignment=ft.Alignment.CENTER,
+                        content=self.view_po_status,
                     ),
-                ),
-                ft.Row([
-                    ft.Text("Total", weight=ft.FontWeight.BOLD),
-                    self.view_po_total,
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    view_row("PO Number", self.view_po_number),
+                    view_row("Distributor", self.view_po_distributor),
+                    view_row("Order Date", self.view_po_date),
+                    ft.Divider(),
+                    ft.Text("Items", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Container(
+                        height=260,
+                        content=ft.Column(
+                            controls=[self.view_po_table],
+                        ),
+                    ),
+                    ft.Row([
+                        ft.Text("Total", weight=ft.FontWeight.BOLD),
+                        self.view_po_total,
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ], tight=True, width=840, height=520),
             actions=[
                 ft.TextButton("Close", on_click=lambda _: self.page.pop_dialog()),
@@ -432,7 +433,7 @@ class POPage(ft.Container):
 
     def refresh_po_items_preview(self):
         self.po_items_table.rows = [
-            ft.DataRow(
+            fdt.DataRow2(
                 cells=[
                     ft.DataCell(ft.Text(item["code"])),
                     ft.DataCell(ft.Text(item["name"])),
@@ -702,6 +703,8 @@ class POPage(ft.Container):
         self.refresh_po_items_preview()
 
     def open_po_viewer(self, po: PurchaseOrder):
+        self.page.show_dialog(self.view_po_modal)
+
         self.view_po_number.value = po.po_number
         self.view_po_distributor.value = po.distributor_name
         self.view_po_date.value = po.order_date or "—"
@@ -717,7 +720,7 @@ class POPage(ft.Container):
             """, (po.id,))
 
         self.view_po_table.rows = [
-            ft.DataRow(
+            fdt.DataRow2(
                 cells=[
                     ft.DataCell(ft.Text(r["item_code"])),
                     ft.DataCell(ft.Text(r["item_name"])),
@@ -729,7 +732,13 @@ class POPage(ft.Container):
             for r in rows
         ]
         self.view_po_total.value = f"{sum(r['quantity_ordered'] * r['unit_cost'] for r in rows):.2f}"
-        self.page.show_dialog(self.view_po_modal)
+
+        self.view_po_total.update()
+        self.view_po_table.update()
+        self.view_po_number.update()
+        self.view_po_distributor.update()
+        self.view_po_date.update()
+        self.view_po_status.update()
 
     def mark_po_ordered(self, po: PurchaseOrder):
         with DatabaseManager() as db:
