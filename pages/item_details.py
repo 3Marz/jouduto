@@ -140,9 +140,6 @@ class ItemDetailsPage(ft.Container):
                                     self.save_status,
                                 ]
                             ),
-                            ft.Divider(),
-                            ft.Text("Stock", weight=ft.FontWeight.BOLD),
-                            self.inventory_text,
                         ],
                     ),
                     ft.VerticalDivider(),
@@ -151,6 +148,9 @@ class ItemDetailsPage(ft.Container):
                         expand=True,
                         scroll=ft.ScrollMode.AUTO,
                         controls=[
+                            ft.Text("Stock", weight=ft.FontWeight.BOLD),
+                            self.inventory_text,
+                            ft.Divider(),
                             ft.Text("Purchase Orders", weight=ft.FontWeight.BOLD),
                             self.po_placeholder,
                             self.po_table,
@@ -334,8 +334,8 @@ class ItemDetailsPage(ft.Container):
 
         if inv:
             self.inventory_text.value = (
-                f"Available: {inv['quantity_available']}    "
                 f"Ordered: {inv['quantity_ordered']}    "
+                f"Available: {inv['quantity_available']}    "
                 f"Sold: {inv['quantity_sold']}"
             )
         else:
