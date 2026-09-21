@@ -57,6 +57,20 @@ CREATE TABLE IF NOT EXISTS po_items (
     FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+    tag_id INTEGER PRIMARY KEY,
+    tag_name TEXT NOT NULL UNIQUE,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS item_tags (
+    item_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
+    PRIMARY KEY (item_id, tag_id),
+    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(tag_id) ON DELETE CASCADE
+);
+
 """
 
 
