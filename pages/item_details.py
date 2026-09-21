@@ -4,6 +4,8 @@ import sqlite3
 from database import DatabaseManager
 from datatypes import Item
 
+from components.dropdowns import DistributorDropdown
+
 import flet as ft
 import flet_datatable2 as fdt
 
@@ -27,13 +29,12 @@ class ItemDetailsPage(ft.Container):
             label="Item Name", dense=True, text_size=13, border_radius=12,
             on_submit=self.handle_create_item,
         )
-        self.new_item_distributor_dropdown = ft.Dropdown(
+        self.new_item_distributor_dropdown = DistributorDropdown(
             label="Main Distributor",
             expand=True,
             dense=True,
             text_size=13,
             border_radius=12,
-            options=self.build_distributor_options(),
         )
         self.new_item_status = ft.Text("")
         self.new_item_modal = ft.AlertDialog(
@@ -88,10 +89,9 @@ class ItemDetailsPage(ft.Container):
         # --- Item Details / Editing ---
         self.code_text = ft.Text("-", size=20, weight=ft.FontWeight.BOLD)
         self.name_field = ft.TextField(label="Name", expand=True)
-        self.distributor_dropdown = ft.Dropdown(
+        self.distributor_dropdown = DistributorDropdown(
             label="Main Distributor",
             expand=True,
-            options=self.build_distributor_options(),
         )
         self.inventory_text = ft.Text("")
         self.save_status = ft.Text("")
@@ -178,8 +178,8 @@ class ItemDetailsPage(ft.Container):
 
     def reload(self):
         self.items = self.get_items()
-        self.distributor_dropdown.options = self.build_distributor_options()
-        self.new_item_distributor_dropdown.options = self.build_distributor_options()
+        self.distributor_dropdown.refresh()
+        self.new_item_distributor_dropdown.refresh()
         self.all_tags = self.get_all_tags()
         self.update_tag_suggestions(self.tag_search.value)
         if self.selected_item_id is not None and any(
@@ -194,19 +194,6 @@ class ItemDetailsPage(ft.Container):
                 "SELECT item_id, item_code, item_name FROM items ORDER BY item_code"
             )
         return [Item(r["item_id"], r["item_code"], r["item_name"]) for r in rows]
-
-    def build_distributor_options(self) -> list[ft.DropdownOption]:
-        with DatabaseManager() as db:
-            distros = db.fetch_all(
-                "SELECT distributor_id, distributor_name FROM distributors "
-                "ORDER BY distributor_name"
-            )
-        return [
-            ft.DropdownOption(
-                key=str(d["distributor_id"]), text=d["distributor_name"]
-            )
-            for d in distros
-        ]
 
     def build_suggestion_tiles(self, items: list[Item]) -> list[ft.Control]:
         return [

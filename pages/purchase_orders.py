@@ -1,13 +1,14 @@
 import sqlite3
 from typing import Tuple
 
-from database import DatabaseManager
+from database import DatabaseManager, get_all_items
 
 import flet as ft
 import flet_datatable2 as fdt
 import pandas as pd
 
 from datatypes import Inventory, Item, Distributor, PurchaseOrder
+from components.dropdowns import DistributorDropdown
 
 
 def _split_pasted_row(line: str) -> list[str]:
@@ -81,16 +82,11 @@ class POPage(ft.Container):
         )
 
         # --- Create PO Modal ---
-        self.distributor_dropdown = ft.Dropdown(
+        self.distributor_dropdown = DistributorDropdown(
             label="Select Distributor",
             dense=True,
             text_size=16,
             border_radius=12,
-            # height=50,
-            options=[
-                ft.DropdownOption(key=str(d["distributor_id"]), text=d["distributor_name"])
-                for d in self.get_distributors()
-            ]
         )
         self.po_number_field = ft.TextField(
             label="PO Number",
@@ -242,7 +238,7 @@ class POPage(ft.Container):
                         ft.Row([
                             self.po_number_field,
                             self.distributor_dropdown,
-                        ]),
+                        ], expand=True),
                         ft.Row([
                             ft.Text("Total : ", weight=ft.FontWeight.BOLD),
                             self.po_items_total,
@@ -365,14 +361,11 @@ class POPage(ft.Container):
         self.page.show_dialog(self.create_po_modal)
         self.reset_create_po_form()
 
-    def get_distributors(self):
-        with DatabaseManager() as db:
-            return db.fetch_all("SELECT * FROM distributors")
-
     def get_items_list(self):
-        with DatabaseManager() as db:
-            db_items = db.fetch_all("SELECT * FROM items")
-            return [Item(itm["item_id"], itm["item_code"], itm["item_name"]) for itm in db_items]
+        return [
+            Item(itm["item_id"], itm["item_code"], itm["item_name"])
+            for itm in get_all_items()
+        ]
 
     def get_pos_data(self) -> list[PurchaseOrder]:
         pos = []

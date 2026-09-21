@@ -1,52 +1,7 @@
 import flet as ft
 
 from appstate import get_active_year, get_years
-from database import DatabaseManager
-
-
-def _fetch_dashboard_stats() -> dict:
-    """Pull aggregate stats from the active year's DB for the home dashboard."""
-    with DatabaseManager() as db:
-        row = db.fetch_one("SELECT COUNT(*) AS cnt FROM items")
-        total_items = row["cnt"] if row else 0
-
-        row = db.fetch_one(
-            "SELECT COALESCE(SUM(quantity_available), 0) AS avail, "
-            "COALESCE(SUM(quantity_ordered), 0) AS ordered, "
-            "COALESCE(SUM(quantity_sold), 0) AS sold FROM inventory"
-        )
-        total_available = row["avail"] if row else 0
-        total_ordered = row["ordered"] if row else 0
-        total_sold = row["sold"] if row else 0
-
-        row = db.fetch_one(
-            "SELECT COUNT(*) AS cnt FROM inventory WHERE quantity_available < 10"
-        )
-        low_stock = row["cnt"] if row else 0
-
-        row = db.fetch_one(
-            "SELECT COUNT(*) AS cnt FROM inventory WHERE quantity_available = 0"
-        )
-        out_of_stock = row["cnt"] if row else 0
-
-        row = db.fetch_one(
-            "SELECT COUNT(*) AS cnt FROM purchase_orders WHERE status = 'ORDERED'"
-        )
-        active_pos = row["cnt"] if row else 0
-
-        row = db.fetch_one("SELECT COUNT(*) AS cnt FROM distributors")
-        distributors = row["cnt"] if row else 0
-
-    return {
-        "total_items": total_items,
-        "total_available": total_available,
-        "total_ordered": total_ordered,
-        "total_sold": total_sold,
-        "low_stock": low_stock,
-        "out_of_stock": out_of_stock,
-        "active_pos": active_pos,
-        "distributors": distributors,
-    }
+from database import get_dashboard_stats
 
 
 def _fmt(n: int) -> str:
@@ -141,7 +96,7 @@ class HomePage(ft.Container):
         )
 
         # Dashboard stats
-        stats = _fetch_dashboard_stats()
+        stats = get_dashboard_stats()
         total_inventory = max(stats["total_available"] + stats["total_ordered"] + stats["total_sold"], 1)
 
         # Stat rings row

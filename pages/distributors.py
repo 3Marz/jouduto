@@ -1,7 +1,8 @@
 
 import sqlite3
 
-from database import DatabaseManager
+from database import DatabaseManager, get_all_distributors
+from components.dialogs import confirm_delete
 import flet as ft
 
 @ft.control
@@ -14,15 +15,12 @@ class DistributorsPage(ft.Container):
         self.create_distributor_name = ""
         self.status = ft.Text()
 
-        self.confirm_delete_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Are you sure?"),
-            content=ft.Text("This will delete the distributor"),
-            alignment=ft.Alignment.CENTER,
-            actions = [
-                ft.Button("Yes", on_click=self.handle_delete),
-                ft.Button("No", on_click=lambda e: self.page.pop_dialog())
-            ]
+        self.confirm_delete_dialog = confirm_delete(
+            title="Are you sure?",
+            message="This will delete the distributor",
+            confirm_text="Yes",
+            deny_text="No",
+            on_confirm=self.handle_delete,
         )
 
         self.view_table = ft.DataTable(
@@ -125,9 +123,7 @@ class DistributorsPage(ft.Container):
         self.page.show_dialog(self.confirm_delete_dialog)
 
     def build_distributors_view(self) -> list[ft.DataRow]:
-        distros = []
-        with DatabaseManager() as db:
-            distros = db.fetch_all("SELECT * FROM distributors")
+        distros = get_all_distributors()
 
         return [
             ft.DataRow(

@@ -4,6 +4,82 @@ from typing import Optional, Any, Tuple, List, Dict
 from datatypes import Inventory, Item
 import appstate
 
+
+# ---------------------------------------------------------------------------
+# Shared query helpers. Each opens its own short-lived connection so callers
+# never have to hand-write SQL or manage a context just to fetch a common list.
+# The active year comes from appstate (the same logic the pages used inline),
+# so these "just work" against whichever fiscal year is selected.
+# ---------------------------------------------------------------------------
+
+def get_all_distributors() -> list[dict]:
+    """Return every distributor row ordered by name."""
+    with DatabaseManager() as db:
+        return db.fetch_all(
+            "SELECT * FROM distributors ORDER BY distributor_name"
+        )
+
+
+def get_distributor_pairs() -> list[tuple[int, str]]:
+    """Return (id, name) pairs for populating distributor dropdowns."""
+    with DatabaseManager() as db:
+        rows = db.fetch_all(
+            "SELECT distributor_id, distributor_name FROM distributors "
+            "ORDER BY distributor_name"
+        )
+    return [(r["distributor_id"], r["distributor_name"]) for r in rows]
+
+
+def get_all_items() -> list[dict]:
+    """Return every item row ordered by name."""
+    with DatabaseManager() as db:
+        return db.fetch_all("SELECT * FROM items ORDER BY item_name")
+
+
+def get_dashboard_stats() -> dict:
+    """Pull aggregate inventory/PO stats for the Home dashboard."""
+    with DatabaseManager() as db:
+        row = db.fetch_one("SELECT COUNT(*) AS cnt FROM items")
+        total_items = row["cnt"] if row else 0
+
+        row = db.fetch_one("SELECT COUNT(*) AS cnt FROM distributors")
+        distributors = row["cnt"] if row else 0
+
+        row = db.fetch_one(
+            "SELECT COALESCE(SUM(quantity_available), 0) AS avail, "
+            "COALESCE(SUM(quantity_ordered), 0) AS ordered, "
+            "COALESCE(SUM(quantity_sold), 0) AS sold FROM inventory"
+        )
+        total_available = row["avail"] if row else 0
+        total_ordered = row["ordered"] if row else 0
+        total_sold = row["sold"] if row else 0
+
+        row = db.fetch_one(
+            "SELECT COUNT(*) AS cnt FROM inventory WHERE quantity_available < 10"
+        )
+        low_stock = row["cnt"] if row else 0
+
+        row = db.fetch_one(
+            "SELECT COUNT(*) AS cnt FROM inventory WHERE quantity_available = 0"
+        )
+        out_of_stock = row["cnt"] if row else 0
+
+        row = db.fetch_one(
+            "SELECT COUNT(*) AS cnt FROM purchase_orders WHERE status = 'ORDERED'"
+        )
+        active_pos = row["cnt"] if row else 0
+
+    return {
+        "total_items": total_items,
+        "total_available": total_available,
+        "total_ordered": total_ordered,
+        "total_sold": total_sold,
+        "low_stock": low_stock,
+        "out_of_stock": out_of_stock,
+        "active_pos": active_pos,
+        "distributors": distributors,
+    }
+
 # One-time migration: collapse PO statuses to DRAFT/ORDERED. Existing databases
 # created before this change used ORDERED/RECEIVED/CANCELLED (plus an INSERT
 # trigger that reserved quantity_ordered). Rebuilt the purchase_orders table so
