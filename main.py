@@ -10,6 +10,7 @@ from pages.items import ItemsPage
 from pages.item_details import ItemDetailsPage
 from pages.distributors import DistributorsPage
 from pages.purchase_orders import POPage
+from pages.order_report import OrderReportPage
 
 
 class PageRoute:
@@ -26,6 +27,7 @@ def initialize_pages() -> list[PageRoute]:
         PageRoute("/item-details", "Item Details", ItemDetailsPage),
         PageRoute("/distributors", "Distributors", DistributorsPage),
         PageRoute("/pos", "Purchase Orders", POPage),
+        PageRoute("/order-report", "Order Report", OrderReportPage),
     ]
 
 

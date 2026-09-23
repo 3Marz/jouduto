@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from typing import Optional, Any, Tuple, List, Dict
 
@@ -34,6 +35,118 @@ def get_all_items() -> list[dict]:
     """Return every item row ordered by name."""
     with DatabaseManager() as db:
         return db.fetch_all("SELECT * FROM items ORDER BY item_name")
+
+
+def get_tag_pairs() -> list[tuple[int, str]]:
+    """Return (id, name) pairs for populating tag filter controls."""
+    with DatabaseManager() as db:
+        rows = db.fetch_all("SELECT tag_id, tag_name FROM tags ORDER BY tag_name")
+    return [(r["tag_id"], r["tag_name"]) for r in rows]
+
+
+def get_item_tag_map() -> dict[int, list[str]]:
+    """Return {item_id: [tag_name, ...]} for the active year's DB."""
+    with DatabaseManager() as db:
+        rows = db.fetch_all(
+            """
+            SELECT it.item_id, t.tag_name
+            FROM item_tags it
+            JOIN tags t ON it.tag_id = t.tag_id
+            ORDER BY t.tag_name
+            """
+        )
+    mapping: dict[int, list[str]] = {}
+    for r in rows:
+        mapping.setdefault(r["item_id"], []).append(r["tag_name"])
+    return mapping
+
+
+def get_report_items(distributor_id: int | None = None) -> list[dict]:
+    """Return items with inventory + cost for the order report.
+
+    When distributor_id is given, only items supplied by that distributor
+    come back, costed at that distributor's price. Otherwise every item is
+    returned, costed at its primary distributor's price (falling back to
+    the item's first distributor, then inventory-level cost).
+    """
+    if distributor_id is not None:
+        with DatabaseManager() as db:
+            return db.fetch_all(
+                """
+                SELECT i.item_id, i.item_code, i.item_name,
+                       inv.quantity_available AS available,
+                       inv.quantity_ordered AS ordered,
+                       inv.quantity_sold AS sold,
+                       id_.cost_price, d.distributor_name
+                FROM items i
+                JOIN inventory inv ON inv.item_id = i.item_id
+                JOIN item_distributors id_ ON id_.item_id = i.item_id
+                                          AND id_.distributor_id = ?
+                JOIN distributors d ON d.distributor_id = id_.distributor_id
+                ORDER BY i.item_name
+                """,
+                (distributor_id,),
+            )
+
+    with DatabaseManager() as db:
+        rows = db.fetch_all(
+            """
+            SELECT i.item_id, i.item_code, i.item_name,
+                   inv.quantity_available AS available,
+                   inv.quantity_ordered AS ordered,
+                   inv.quantity_sold AS sold,
+                   inv.cost_price
+            FROM items i
+            LEFT JOIN inventory inv ON inv.item_id = i.item_id
+            ORDER BY i.item_name
+            """
+        )
+        id_rows = db.fetch_all(
+            """
+            SELECT id_.item_id, id_.cost_price, d.distributor_name
+            FROM item_distributors id_
+            JOIN distributors d ON d.distributor_id = id_.distributor_id
+            ORDER BY id_.item_id, id_.is_primary DESC
+            """
+        )
+        distro_by_item: dict[int, list[dict]] = {}
+        for r in id_rows:
+            distro_by_item.setdefault(r["item_id"], []).append(r)
+
+    for row in rows:
+        row["cost_price"] = row["cost_price"] or 0
+        row["distributor_name"] = ""
+        row["distributor_id"] = None
+        for d in distro_by_item.get(row["item_id"], []):
+            if d["cost_price"] is not None:
+                row["cost_price"] = d["cost_price"]
+                row["distributor_name"] = d["distributor_name"]
+                break
+    return rows
+
+
+def get_item_year_sales() -> dict[str, dict[int, int]]:
+    """Return {item_code: {year: quantity_sold}} across every year's DB.
+
+    Each fiscal year is its own database with its own item_ids, so rows are
+    matched across years by item_code (unique within each year's DB).
+    """
+    sales: dict[str, dict[int, int]] = {}
+    for year in appstate.get_years():
+        db_path = appstate.get_db_path(year)
+        if not os.path.exists(db_path):
+            continue
+        with DatabaseManager(db_path) as db:
+            rows = db.fetch_all(
+                """
+                SELECT i.item_code, COALESCE(inv.quantity_sold, 0) AS sold
+                FROM items i
+                LEFT JOIN inventory inv ON inv.item_id = i.item_id
+                """
+            )
+        for r in rows:
+            sales.setdefault(r["item_code"], {})[year] = r["sold"]
+    return sales
 
 
 def get_dashboard_stats() -> dict:

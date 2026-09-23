@@ -131,6 +131,7 @@ class HomePage(ft.Container):
                 self._make_nav_card("Item Details", ft.Icons.SEARCH, "/item-details"),
                 self._make_nav_card("Distributors", ft.Icons.BUSINESS_OUTLINED, "/distributors"),
                 self._make_nav_card("Purchase Orders", ft.Icons.SHOPPING_CART_CHECKOUT_OUTLINED, "/pos"),
+                self._make_nav_card("Order Report", ft.Icons.ASSESSMENT_OUTLINED, "/order-report"),
             ],
         )
 
