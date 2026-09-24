@@ -47,7 +47,7 @@ class ItemDetailsPage(ft.Container):
             ], tight=True, width=380, spacing=10),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog()),
-                ft.ElevatedButton("Create", on_click=self.handle_create_item),
+                ft.Button("Create", on_click=self.handle_create_item),
             ],
         )
         self.new_item_button = ft.Button(
@@ -346,7 +346,7 @@ class ItemDetailsPage(ft.Container):
         )
         self.po_placeholder.visible = not pos
 
-    def handle_create_item(self, e: ft.Event[ft.Control] = None):
+    def handle_create_item(self, e: ft.Event[ft.Control]):
         code = (self.new_item_code_field.value or "").strip()
         name = (self.new_item_name_field.value or "").strip()
         if not code or not name:

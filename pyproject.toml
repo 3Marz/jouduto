@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "flet",
-    "GoogleImageScraper",
+    "flet-datatable2",
+    "pandas",
     "pyperclip"
 ]
 
