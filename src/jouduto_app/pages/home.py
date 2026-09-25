@@ -141,25 +141,13 @@ class HomePage(ft.Container):
             controls=[
                 # Year selector row
                 ft.Row(
+                    margin=ft.Margin(top=12),
                     spacing=12,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[
                         self.year_dropdown,
                         self.year_caption,
                     ],
-                ),
-                ft.Divider(height=1),
-                # Dashboard
-                ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Text("Dashboard", size=22, weight=ft.FontWeight.BOLD),
-                            stat_rings,
-                            stock_bars,
-                        ],
-                        spacing=14,
-                    ),
-                    padding=ft.Padding.symmetric(horizontal=16, vertical=8),
                 ),
                 ft.Divider(height=1),
                 # Navigation
@@ -173,6 +161,19 @@ class HomePage(ft.Container):
                         spacing=6,
                     ),
                     padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+                ),
+                ft.Divider(height=1),
+                # Dashboard
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            ft.Text("Dashboard", size=22, weight=ft.FontWeight.BOLD),
+                            stat_rings,
+                            stock_bars,
+                        ],
+                        spacing=14,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=16, vertical=8),
                 ),
             ],
         )
