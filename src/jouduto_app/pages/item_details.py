@@ -4,6 +4,7 @@ import sqlite3
 from database import DatabaseManager
 from datatypes import Item
 
+from components.dialogs import confirm_delete
 from components.dropdowns import DistributorDropdown
 
 import flet as ft
@@ -24,9 +25,9 @@ class ItemDetailsPage(ft.Container):
         self.selected_item_id: int | None = None
 
         # --- New Item ---
-        self.new_item_code_field = ft.TextField(label="Item Code", dense=True, text_size=13, border_radius=12)
+        self.new_item_code_field = ft.TextField(label="Item Code", dense=True, border_radius=12)
         self.new_item_name_field = ft.TextField(
-            label="Item Name", dense=True, text_size=13, border_radius=12,
+            label="Item Name", dense=True, border_radius=12,
             on_submit=self.handle_create_item,
         )
         self.new_item_distributor_dropdown = DistributorDropdown(
@@ -44,7 +45,7 @@ class ItemDetailsPage(ft.Container):
                 self.new_item_name_field,
                 self.new_item_distributor_dropdown,
                 self.new_item_status,
-            ], tight=True, width=380, spacing=10),
+            ], tight=True, width=380, height=200, spacing=10),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog()),
                 ft.Button("Create", on_click=self.handle_create_item),
@@ -96,6 +97,20 @@ class ItemDetailsPage(ft.Container):
         self.inventory_text = ft.Text("")
         self.save_status = ft.Text("")
 
+        # --- Delete Item ---
+        self.about_to_delete_item_id: int | None = None
+        self.confirm_delete_dialog = confirm_delete(
+            title="Delete item?",
+            message=(
+                "This will permanently delete this item, its inventory, "
+                "and its connections to distributors, tags, and purchase "
+                "orders."
+            ),
+            confirm_text="Delete",
+            deny_text="Cancel",
+            on_confirm=self.handle_delete_item,
+        )
+
         self.po_placeholder = ft.Text("")
         self.po_table = fdt.DataTable2(
             columns=[
@@ -136,6 +151,12 @@ class ItemDetailsPage(ft.Container):
                                         "Save Changes",
                                         icon=ft.Icons.SAVE,
                                         on_click=self.handle_save,
+                                    ),
+                                    ft.Button(
+                                        "Delete Item",
+                                        icon=ft.Icons.DELETE,
+                                        icon_color=ft.Colors.ERROR,
+                                        on_click=self.about_to_delete_item,
                                     ),
                                     self.save_status,
                                 ]
@@ -593,3 +614,57 @@ class ItemDetailsPage(ft.Container):
             self.save_status.value = f"Error: {err}"
             self.save_status.color = ft.Colors.ERROR
             self.save_status.update()
+
+    def about_to_delete_item(self, e: ft.Event[ft.Button] = None):
+        if self.selected_item_id is None:
+            return
+        self.about_to_delete_item_id = self.selected_item_id
+        self.page.show_dialog(self.confirm_delete_dialog)
+
+    def handle_delete_item(self, e: ft.Event[ft.Button] = None):
+        if self.about_to_delete_item_id is None:
+            return
+        item_id = self.about_to_delete_item_id
+
+        self.page.pop_dialog()
+        self.about_to_delete_item_id = None
+
+        try:
+            with DatabaseManager() as db:
+                # Connection rows referencing the item (must go before the
+                # item row itself; po_items RESTRICTs on delete).
+                db.execute_query(
+                    "DELETE FROM po_items WHERE item_id = ?", (item_id,)
+                )
+                db.execute_query(
+                    "DELETE FROM item_tags WHERE item_id = ?", (item_id,)
+                )
+                db.execute_query(
+                    "DELETE FROM item_distributors WHERE item_id = ?", (item_id,)
+                )
+                db.execute_query(
+                    "DELETE FROM inventory WHERE item_id = ?", (item_id,)
+                )
+                db.execute_query(
+                    "DELETE FROM items WHERE item_id = ?", (item_id,)
+                )
+                # Drop tags that no longer belong to any item.
+                db.execute_query(
+                    "DELETE FROM tags WHERE tag_id NOT IN "
+                    "(SELECT DISTINCT tag_id FROM item_tags)"
+                )
+            self.save_status.value = "Item deleted"
+            self.save_status.color = ft.Colors.GREEN
+        except sqlite3.Error as err:
+            self.save_status.value = f"Error deleting item: {err}"
+            self.save_status.color = ft.Colors.ERROR
+            self.save_status.update()
+            return
+
+        self.selected_item_id = None
+        self.details_panel.visible = False
+        self.search_bar.value = ""
+        self.search_bar.controls = self.build_suggestion_tiles(
+            self.items[:SEARCH_SUGGESTION_LIMIT]
+        )
+        self.reload()

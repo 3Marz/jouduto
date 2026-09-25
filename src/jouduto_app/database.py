@@ -149,6 +149,47 @@ def get_item_year_sales() -> dict[str, dict[int, int]]:
     return sales
 
 
+def get_item_history_by_code(item_code: str) -> list[dict]:
+    """Inventory history for `item_code` across every year before the active one.
+
+    Each fiscal year is its own database with its own item_ids, so the item is
+    matched by item_code (unique within each year's DB). Years where the item
+    is not present come back with `found=False` so callers can render it as
+    absent rather than failing.
+    """
+    active_year = appstate.get_active_year()
+    history: list[dict] = []
+    for year in appstate.get_years():
+        if year >= active_year:
+            continue
+        db_path = appstate.get_db_path(year)
+        if not os.path.exists(db_path):
+            continue
+        with DatabaseManager(db_path) as db:
+            row = db.fetch_one(
+                """
+                SELECT i.item_code, i.item_name,
+                       COALESCE(inv.quantity_available, 0)  AS available,
+                       COALESCE(inv.quantity_ordered, 0)   AS ordered,
+                       COALESCE(inv.quantity_sold, 0)      AS sold
+                FROM items i
+                LEFT JOIN inventory inv ON inv.item_id = i.item_id
+                WHERE i.item_code = ?
+                """,
+                (item_code,),
+            )
+        history.append({
+            "year": year,
+            "item_code": item_code,
+            "found": row is not None,
+            "item_name": row["item_name"] if row else "",
+            "available": row["available"] if row else 0,
+            "ordered": row["ordered"] if row else 0,
+            "sold": row["sold"] if row else 0,
+        })
+    return history
+
+
 def get_dashboard_stats() -> dict:
     """Pull aggregate inventory/PO stats for the Home dashboard."""
     with DatabaseManager() as db:

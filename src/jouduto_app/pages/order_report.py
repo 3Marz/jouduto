@@ -21,7 +21,7 @@ from ordering import calculate_order, selling_power
 
 # Report option defaults (editable in the options panel).
 DEFAULT_TARGET_DAYS = 540
-DEFAULT_MINIMUM_ORDER_QTY = 0
+DEFAULT_MINIMUM_ORDER_QTY = 2
 DEFAULT_ORDER_MULTIPLE = 1
 
 ALL_DISTRIBUTORS_KEY = "all"

@@ -2,7 +2,7 @@
 import sqlite3
 import asyncio
 
-from database import DatabaseManager
+from database import DatabaseManager, get_item_history_by_code
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -128,6 +128,11 @@ class ItemsPage(ft.Container):
                     icon=ft.Icons.REMOVE_RED_EYE,
                     on_click=self.handle_view_item_details,
                 ),
+                ft.PopupMenuItem(
+                    content="Previous Years Inventory",
+                    icon=ft.Icons.HISTORY,
+                    on_click=self.handle_view_history,
+                ),
             ],
             secondary_trigger=None,
             expand=True,
@@ -149,6 +154,47 @@ class ItemsPage(ft.Container):
             visible=self.has_more,
         )
 
+        # --- Previous Years Inventory modal ---
+        self.history_title = ft.Text("")
+        self.history_no_match = ft.Text("", italic=True, color=ft.Colors.OUTLINE)
+        self.history_table = fdt.DataTable2(
+            expand=True,
+            heading_row_color=ft.Colors.with_opacity(1, ft.Colors.SURFACE_CONTAINER_HIGH),
+            border=ft.Border.all(1, ft.Colors.SURFACE_CONTAINER_HIGHEST),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            columns=[
+                fdt.DataColumn2(label=ft.Text("Year")),
+                fdt.DataColumn2(label=ft.Text("Ordered"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Available"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Sold"), numeric=True),
+                fdt.DataColumn2(label=ft.Text("Status")),
+            ],
+            rows=[],
+        )
+        self.history_modal = ft.AlertDialog(
+            modal=True,
+            title=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.HISTORY),
+                    ft.Text("Previous Years Inventory"),
+                ]
+            ),
+            content=ft.Column(
+                width=700,
+                height=400,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+                controls=[
+                    self.history_title,
+                    self.history_no_match,
+                    self.history_table,
+                ],
+            ),
+            actions=[
+                ft.Button("Close", on_click=lambda e: self.page.pop_dialog()),
+            ],
+        )
+
         self.imageView = ft.Container(expand=True, content=ft.Text("images"))
 
         self.search_field = ft.TextField(
@@ -156,7 +202,6 @@ class ItemsPage(ft.Container):
             border_color=ft.Colors.SURFACE_BRIGHT,
             hint_text="Search by code or name...",
             icon=ft.Icons.SEARCH,
-            expand=True,
             on_change=self.handle_search_change,
             on_submit=self.handle_search_submit,
         )
@@ -179,6 +224,12 @@ class ItemsPage(ft.Container):
                                                 content="Un/Select",
                                                 icon=ft.Icons.CHECK,
                                                 on_click=self.handle_select_item_button,
+                                            ),
+                                            ft.Button(
+                                                content="History",
+                                                icon=ft.Icons.HISTORY,
+                                                on_click=self.handle_view_history,
+                                                tooltip="Previous years inventory of the focused item",
                                             ),
                                             self.search_field,
                                         ]
@@ -296,6 +347,45 @@ class ItemsPage(ft.Container):
         if self.focused_item_id is None:
             return
         self.page.navigate(f"/item-details?item={self.focused_item_id}")
+
+    def handle_view_history(self, e: ft.Event[ft.Control] = None):
+        if self.focused_item_id is None:
+            return
+        item = next(
+            (i for i in self.displayed_items if i.id == self.focused_item_id),
+            None,
+        )
+        if item is None:
+            return
+
+        history = get_item_history_by_code(item.code)
+
+        self.history_title.value = f"{item.code} — {item.name}"
+        self.history_no_match.value = (
+            "" if history else f"No previous-year data found for '{item.code}'."
+        )
+        self.history_no_match.visible = not history
+
+        self.history_table.rows = [
+            fdt.DataRow2(
+                cells=[
+                    ft.DataCell(ft.Text(str(h["year"]))),
+                    ft.DataCell(ft.Text(f"{h['ordered']:,}")),
+                    ft.DataCell(ft.Text(f"{h['available']:,}")),
+                    ft.DataCell(ft.Text(f"{h['sold']:,}")),
+                    ft.DataCell(ft.Text(
+                        "Not found this year" if not h["found"] else "Found",
+                        italic=not h["found"],
+                    )),
+                ]
+            )
+            for h in history
+        ]
+
+        self.page.show_dialog(self.history_modal)
+        self.history_table.update()
+        self.history_title.update()
+        self.history_no_match.update()
 
     def handle_select_all(self, e: ft.Event[ft.DataTable]):
         if e.data:
@@ -544,6 +634,9 @@ class ItemsPage(ft.Container):
                         it = db.fetch_simple_one_item(row[1])
                         if row[3]:
                             distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
+                            if not distro:
+                                db.execute_query("INSERT INTO distributors (distributor_name) VALUES (?)", (row[3], ))
+                                distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
                             if distro and it:
                                 db.execute_query(
                                     "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",

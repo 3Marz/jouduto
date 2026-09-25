@@ -57,7 +57,7 @@ def calculate_order(
     current_qty: int | float,
     incoming_qty: int | float = 0,
     target_days: int | float = 540,
-    minimum_order_qty: int | float = 0,
+    minimum_order_qty: int | float = 2,
     order_multiple: int | float = 1,
 ) -> dict:
     """Decide whether an item needs ordering this round and by how much.
