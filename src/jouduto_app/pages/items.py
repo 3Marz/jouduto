@@ -34,6 +34,7 @@ class ItemsPage(ft.Container):
 
         self.files: None | list[ft.FilePickerFile] = None
         self.selected_import_type: str | None = "items"
+        self.import_status = ft.Text("")
 
         self.selected_item_ids: set[int] = set()
         self.focused_item_id: int | None = self.displayed_items[0].id if self.displayed_items else None
@@ -78,6 +79,7 @@ class ItemsPage(ft.Container):
                             )
                         ]
                     ),
+                    self.import_status
                 ]
             ),
             actions = [
@@ -625,6 +627,11 @@ class ItemsPage(ft.Container):
 
         df = pd.read_excel(self.files[0].path)
 
+        added = 0
+        updated = 0
+        skipped = 0
+        errors = 0
+
         if self.selected_import_type == "items":
 
             for row in df.itertuples():
@@ -632,18 +639,25 @@ class ItemsPage(ft.Container):
                     with DatabaseManager() as db:
                         db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
                         it = db.fetch_simple_one_item(row[1])
-                        if row[3]:
+                        if it and len(row) > 3 and row[3]:
                             distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
                             if not distro:
                                 db.execute_query("INSERT INTO distributors (distributor_name) VALUES (?)", (row[3], ))
                                 distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
-                            if distro and it:
+                            if distro:
                                 db.execute_query(
                                     "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",
                                     (it.id, distro["distributor_id"])
                                 )
+                    added += 1
                 except sqlite3.Error as err:
+                    errors += 1
                     print(f"Error : %{err}")
+
+            self.import_status.value = (
+                f"Items imported: {added}"
+                + (f", errors: {errors}" if errors else "")
+            )
 
         elif self.selected_import_type == "avil_stock":
             for row in df.itertuples():
@@ -656,13 +670,22 @@ class ItemsPage(ft.Container):
                                     db.execute_query("UPDATE inventory SET quantity_available = ? WHERE inventory_id = ?", (row[7], it.inventory.id))
                                 else:
                                     db.execute_query("INSERT INTO inventory (item_id, quantity_available) VALUES (?, ?)", (it.id, row[7]))
+                                updated += 1
+                            else:
+                                skipped += 1
                     except sqlite3.Error as err:
+                        errors += 1
                         print(f"Error : %{err}")
+
+            self.import_status.value = (
+                f"Available stock updated: {updated}"
+                + (f", skipped: {skipped}" if skipped else "")
+                + (f", errors: {errors}" if errors else "")
+            )
 
         elif self.selected_import_type == "sold_stock":
             for row in df.itertuples():
                 if row[0] != 0:
-                    print(row[1], row[11])
                     try:
                         with DatabaseManager() as db:
                             it = db.fetch_simple_one_item(row[1])
@@ -671,12 +694,25 @@ class ItemsPage(ft.Container):
                                     db.execute_query("UPDATE inventory SET quantity_sold = ? WHERE inventory_id = ?", (row[11], it.inventory.id))
                                 else:
                                     db.execute_query("INSERT INTO inventory (item_id, quantity_sold) VALUES (?, ?)", (it.id, row[11]))
+                                updated += 1
+                            else:
+                                skipped += 1
                     except sqlite3.Error as err:
+                        errors += 1
                         print(f"Error : %{err}")
+
+            self.import_status.value = (
+                f"Sold stock updated: {updated}"
+                + (f", skipped: {skipped}" if skipped else "")
+                + (f", errors: {errors}" if errors else "")
+            )
+
+        self.import_status.color = ft.Colors.GREEN if errors == 0 else ft.Colors.ERROR
+        self.import_status.update()
 
         self.files = []
         self.pick_file_button.content = "Pick file"
         self.load_first_page()
         self.refresh_table_rows()
         self.update_pagination_controls()
-        self.page.pop_dialog()
+        # self.page.pop_dialog()
