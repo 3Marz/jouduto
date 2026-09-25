@@ -50,6 +50,8 @@ def selling_power(sales_by_year: dict[int, int], today: date | None = None) -> f
         return 0.0
     return sum(rates) / len(rates)
 
+def round_to_nearest_5(number):
+    return int(5 * round(number / 5))
 
 def calculate_order(
     *,
@@ -105,6 +107,9 @@ def calculate_order(
 
     qty = max(qty, minimum_order_qty)
     qty = math.ceil(qty / order_multiple) * order_multiple
+
+    if qty > 30:
+        qty = round_to_nearest_5(qty)
 
     return {
         "should_order": True,
