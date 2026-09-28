@@ -1,7 +1,5 @@
 
-import sqlite3
-
-from database import DatabaseManager, get_all_distributors
+from database import DatabaseManager, DBError, get_all_distributors
 from components.dialogs import confirm_delete
 import flet as ft
 
@@ -84,7 +82,7 @@ class DistributorsPage(ft.Container):
 
                 self.update()
                 print("Distributor Crated")
-        except sqlite3.Error as er:
+        except DBError as er:
             self.status.value = f"Error: {er}"
             self.status.color = ft.Colors.ERROR
             self.update()
@@ -106,7 +104,7 @@ class DistributorsPage(ft.Container):
                 self.update()
                 print("Distributor Deleted")
 
-        except sqlite3.Error as er:
+        except DBError as er:
             self.status.value = f"Error: {er}"
             self.status.color = ft.Colors.ERROR
             self.update()

@@ -1,8 +1,7 @@
 
-import sqlite3
 import asyncio
 
-from database import DatabaseManager, get_item_history_by_code
+from database import DatabaseManager, DBError, get_item_history_by_code
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -633,26 +632,32 @@ class ItemsPage(ft.Container):
         errors = 0
 
         if self.selected_import_type == "items":
-
-            for row in df.itertuples():
-                try:
-                    with DatabaseManager() as db:
-                        db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
-                        it = db.fetch_simple_one_item(row[1])
-                        if it and len(row) > 3 and row[3]:
-                            distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
-                            if not distro:
-                                db.execute_query("INSERT INTO distributors (distributor_name) VALUES (?)", (row[3], ))
+            # One transaction (and therefore one replication push) for the whole
+            # sheet. Committing per row would cost a network round-trip per
+            # spreadsheet row.
+            try:
+                with DatabaseManager() as db:
+                    for row in df.itertuples():
+                        try:
+                            db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (row[1], row[2]))
+                            it = db.fetch_simple_one_item(row[1])
+                            if it and len(row) > 3 and row[3]:
                                 distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
-                            if distro:
-                                db.execute_query(
-                                    "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",
-                                    (it.id, distro["distributor_id"])
-                                )
-                    added += 1
-                except sqlite3.Error as err:
-                    errors += 1
-                    print(f"Error : %{err}")
+                                if not distro:
+                                    db.execute_query("INSERT INTO distributors (distributor_name) VALUES (?)", (row[3], ))
+                                    distro = db.fetch_one("SELECT * FROM distributors WHERE distributor_name = ?", (row[3], ))
+                                if distro:
+                                    db.execute_query(
+                                        "INSERT INTO item_distributors (item_id, distributor_id, is_primary) VALUES (?, ?, TRUE)",
+                                        (it.id, distro["distributor_id"])
+                                    )
+                            added += 1
+                        except DBError as err:
+                            errors += 1
+                            print(f"Error : %{err}")
+            except DBError as err:
+                errors += 1
+                print(f"Error : %{err}")
 
             self.import_status.value = (
                 f"Items imported: {added}"
@@ -660,10 +665,12 @@ class ItemsPage(ft.Container):
             )
 
         elif self.selected_import_type == "avil_stock":
-            for row in df.itertuples():
-                if row[0] != 0:
-                    try:
-                        with DatabaseManager() as db:
+            try:
+                with DatabaseManager() as db:
+                    for row in df.itertuples():
+                        if row[0] == 0:
+                            continue
+                        try:
                             it = db.fetch_simple_one_item(row[1])
                             if it:
                                 if it.inventory:
@@ -673,9 +680,12 @@ class ItemsPage(ft.Container):
                                 updated += 1
                             else:
                                 skipped += 1
-                    except sqlite3.Error as err:
-                        errors += 1
-                        print(f"Error : %{err}")
+                        except DBError as err:
+                            errors += 1
+                            print(f"Error : %{err}")
+            except DBError as err:
+                errors += 1
+                print(f"Error : %{err}")
 
             self.import_status.value = (
                 f"Available stock updated: {updated}"
@@ -684,10 +694,12 @@ class ItemsPage(ft.Container):
             )
 
         elif self.selected_import_type == "sold_stock":
-            for row in df.itertuples():
-                if row[0] != 0:
-                    try:
-                        with DatabaseManager() as db:
+            try:
+                with DatabaseManager() as db:
+                    for row in df.itertuples():
+                        if row[0] == 0:
+                            continue
+                        try:
                             it = db.fetch_simple_one_item(row[1])
                             if it:
                                 if it.inventory:
@@ -697,9 +709,12 @@ class ItemsPage(ft.Container):
                                 updated += 1
                             else:
                                 skipped += 1
-                    except sqlite3.Error as err:
-                        errors += 1
-                        print(f"Error : %{err}")
+                        except DBError as err:
+                            errors += 1
+                            print(f"Error : %{err}")
+            except DBError as err:
+                errors += 1
+                print(f"Error : %{err}")
 
             self.import_status.value = (
                 f"Sold stock updated: {updated}"

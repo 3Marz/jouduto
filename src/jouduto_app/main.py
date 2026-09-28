@@ -2,6 +2,7 @@ from database import DatabaseManager
 import database
 import constants
 import appstate
+import turso_config
 import flet as ft
 
 from pages.home import HomePage
@@ -33,11 +34,32 @@ def initialize_pages() -> list[PageRoute]:
 
 
 def initialize_database():
-    for year in appstate.get_years():
-        with DatabaseManager(appstate.get_db_path(year)) as db:
+    """Connect every configured fiscal year's replica and ensure its schema.
+
+    Cloud mode is the default: a year with no TURSO_URL_<year> is a
+    misconfiguration, not something to silently skip, because quietly falling
+    back to a stale local file is exactly the failure this migration is meant
+    to remove. Embedded mode (remote disabled) keeps the local-file behaviour.
+    """
+    years = appstate.get_years()
+    if appstate.is_remote_enabled():
+        years = turso_config.configured_years(years)
+        if not years:
+            raise turso_config.TursoConfigError(
+                f"No Turso databases configured. Add {turso_config.REMOTE_URL_PREFIX}<year> "
+                f"entries and {turso_config.AUTH_TOKEN_VAR} to {turso_config.env_file_path()} "
+                f"(see .env.example)."
+            )
+
+    for year in years:
+        # Connect once so any bootstrap/replication problem surfaces here, at
+        # startup, instead of on the user's first click.
+        with DatabaseManager(year=year) as db:
             db.execute_script(constants.INITIAL_DB_SCHEME)
             database.migrate_po_statuses(db)
-    print("Databases initialized for years:", ", ".join(str(y) for y in appstate.get_years()))
+
+    suffix = " on Turso" if appstate.is_remote_enabled() else " (embedded)"
+    print("Databases initialized%s for years: %s" % (suffix, ", ".join(str(y) for y in years)))
 
 
 def main(page: ft.Page):
@@ -77,6 +99,7 @@ def main(page: ft.Page):
     page.views = [shell.root_view]
     page.on_route_change = lambda e: shell.navigate(page.route)
     page.on_view_pop = lambda e: shell.back()
+    page.on_disconnect = lambda e: database.close_all_connections()
     page.update()
 
 

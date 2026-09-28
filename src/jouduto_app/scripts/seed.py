@@ -4,11 +4,15 @@
 By default this refuses to touch a database that already contains items, so a
 mistyped command can't wipe your real data. Use --reset to explicitly wipe first.
 
+It seeds a throwaway local SQLite file, not the live cloud databases. To seed a
+real Turso database, name the fiscal year explicitly.
+
 Examples:
-    python scripts/seed.py                                  # seed data/jouduto.db (refuses if non-empty)
+    python scripts/seed.py                                  # seed data/seed_scratch.db (refuses if non-empty)
     python scripts/seed.py --reset                          # wipe existing data, then seed
     python scripts/seed.py --db /tmp/opencode/test.db --reset
     python scripts/seed.py --items 6000                     # stress-test the item search
+    python scripts/seed.py --year 2026 --reset              # seed the 2026 database on Turso
 """
 
 from __future__ import annotations
@@ -135,8 +139,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--db",
-        default=appstate.get_db_path(),
-        help="database file path (defaults to the active year's DB)",
+        help=(
+            "local SQLite file to seed (defaults to a scratch file under DATA_DIR). "
+            "Ignored when --year is given."
+        ),
+    )
+    parser.add_argument(
+        "--year",
+        type=int,
+        help="seed this fiscal year's Turso database instead of a local file",
     )
     parser.add_argument(
         "--reset",
@@ -150,20 +161,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rng = random.Random(args.seed)
-    db_path = Path(args.db)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with DatabaseManager(str(db_path)) as db:
+    # Cloud target: DatabaseManager resolves the year to its replica + remote
+    # and pushes the finished transaction to Turso. Local target: a throwaway
+    # embedded file, with replication switched off entirely.
+    if args.year is not None:
+        manager = DatabaseManager(year=args.year)
+        label = f"year {args.year} on Turso"
+    else:
+        db_path = Path(args.db or (Path(appstate.DATA_DIR) / "seed_scratch.db"))
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        appstate.set_remote_enabled(False)
+        manager = DatabaseManager(str(db_path))
+        label = str(db_path)
+
+    with manager as db:
         db.execute_script(constants.INITIAL_DB_SCHEME)
 
         if has_data(db) and not args.reset:
-            print(f"Refusing to seed: {db_path} already contains items.")
+            print(f"Refusing to seed: {label} already contains items.")
             print("Re-run with --reset to wipe it first.")
             return 1
 
         if args.reset:
             wipe(db)
-            print(f"Wiped existing data in {db_path}")
+            print(f"Wiped existing data in {label}")
 
         seed(db, rng, args)
 
@@ -175,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             "po_items": db.fetch_one("SELECT COUNT(*) AS n FROM po_items")["n"],
         }
 
-    print(f"Seeded {db_path}:")
+    print(f"Seeded {label}:")
     for name, n in counts.items():
         print(f"  {name:16} {n}")
     return 0

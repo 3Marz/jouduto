@@ -23,6 +23,7 @@ import urllib.parse
 import flet as ft
 
 import appstate
+import database
 
 
 class Tab:
@@ -208,6 +209,9 @@ class AppShell:
             return
         tab.year = year
         appstate.set_active_year(year)  # context for the fresh Home build
+        # Switching year is an explicit "go look at that data" action, so this
+        # is where we pull remote changes made by another client.
+        database.pull_all_years([year])
         tab.home = self.make_home()
         tab.stack = [("/", "Home", tab.home)]
         self.render()

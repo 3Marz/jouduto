@@ -1,6 +1,6 @@
 import flet as ft
 
-from appstate import get_active_year, get_years
+from appstate import get_active_year, get_years, get_sync_error
 from database import get_dashboard_stats
 
 
@@ -95,6 +95,23 @@ class HomePage(ft.Container):
             on_select=self.handle_year_change,
         )
 
+        # A failed pull/push leaves the local replica behind the cloud, so say
+        # so on the first screen the user sees rather than failing silently.
+        self.sync_warning = ft.Container(
+            visible=False,
+            border_radius=12,
+            padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+            bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.ERROR),
+            content=ft.Text("", color=ft.Colors.ERROR, size=13),
+        )
+        sync_error = get_sync_error()
+        if sync_error:
+            self.sync_warning.content.value = (
+                f"Cloud sync problem - {sync_error}. Changes are saved locally "
+                f"and will be pushed on the next successful attempt."
+            )
+            self.sync_warning.visible = True
+
         # Dashboard stats
         stats = get_dashboard_stats()
         total_inventory = max(stats["total_available"] + stats["total_ordered"] + stats["total_sold"], 1)
@@ -150,6 +167,11 @@ class HomePage(ft.Container):
                     ],
                 ),
                 ft.Divider(height=1),
+                # Replication status
+                ft.Container(
+                    margin=ft.Margin.symmetric(horizontal=16, vertical=4),
+                    content=self.sync_warning,
+                ),
                 # Navigation
                 ft.Container(
                     content=ft.Column(

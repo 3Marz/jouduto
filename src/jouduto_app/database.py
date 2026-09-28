@@ -1,16 +1,191 @@
 import os
-import sqlite3
+import threading
 from typing import Optional, Any, Tuple, List, Dict
+
+import turso
+import turso.sync
 
 from datatypes import Inventory, Item
 import appstate
+import turso_config
+
+
+# Turso ships its own DB-API exception hierarchy that does NOT subclass
+# sqlite3.Error, so every page catches this instead.
+DBError = turso.Error
 
 
 # ---------------------------------------------------------------------------
-# Shared query helpers. Each opens its own short-lived connection so callers
-# never have to hand-write SQL or manage a context just to fetch a common list.
-# The active year comes from appstate (the same logic the pages used inline),
-# so these "just work" against whichever fiscal year is selected.
+# Connection management.
+#
+# Reads are served from a local embedded replica that replicates with the remote
+# via `turso.sync` — there is no HTTP-only remote driver in pyturso. Opening a
+# sync connection bootstraps over the network, so connections are cached per
+# replica for the whole session and shared; a `with DatabaseManager()` block is
+# a transaction scope (commit + push / rollback), not a connection.
+# ---------------------------------------------------------------------------
+
+class _Connection:
+    """A cached Turso connection plus the bookkeeping sync mode needs."""
+
+    def __init__(self, replica_path: str, remote_url: str | None, auth_token: str | None):
+        self.replica_path = replica_path
+        self.remote_url = remote_url
+        self.label = os.path.basename(replica_path)
+
+        parent = os.path.dirname(replica_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        if remote_url:
+            self.conn = turso.sync.connect(
+                replica_path,
+                remote_url=remote_url,
+                auth_token=auth_token,
+                client_name=turso_config.client_name(),
+                long_poll_timeout_ms=turso_config.pull_timeout_ms(),
+                bootstrap_if_empty=True,
+            )
+        else:
+            # Embedded-only (headless scripts and smoke tests).
+            self.conn = turso.connect(replica_path)
+
+        self.conn.row_factory = turso.Row
+        self.pulled = False
+
+    def _report(self, op: str, err: Exception) -> None:
+        message = f"{self.label}: {op} failed - {err}"
+        appstate.set_sync_error(message)
+        print(f"[turso] {message}")
+
+    def _clear_error(self) -> None:
+        appstate.clear_sync_error_if(self.label)
+
+    def pull(self) -> bool:
+        """Fetch remote changes into the replica. No-op when embedded.
+
+        A failed pull is reported but not fatal: the local replica is still
+        readable, so the app degrades to stale data instead of dying.
+        """
+        if self.remote_url is None:
+            self.pulled = True
+            return False
+        try:
+            changed = bool(self.conn.pull())
+        except Exception as err:
+            self.pulled = True
+            self._report("pull", err)
+            return False
+        self.pulled = True
+        self._clear_error()
+        return changed
+
+    def push(self) -> None:
+        """Ship local commits to the remote. No-op when embedded."""
+        if self.remote_url is None:
+            return
+        try:
+            self.conn.push()
+        except Exception as err:
+            self._report("push", err)
+            return
+        self._clear_error()
+
+    def close(self) -> None:
+        try:
+            if self.remote_url is not None:
+                self.push()
+                self.conn.checkpoint()
+        except Exception:
+            pass
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+
+_connections: Dict[Tuple[str, Optional[str]], _Connection] = {}
+_conn_lock = threading.RLock()
+
+
+def _remote_url_for(year: int) -> str | None:
+    """Remote URL for `year`, or None when running embedded.
+
+    Raises when cloud mode is on but the year has no remote configured: a
+    misconfigured deployment should fail immediately and say which variable is
+    missing, not silently fall back to whatever happens to be on disk.
+    """
+    if not appstate.is_remote_enabled():
+        return None
+    url = turso_config.get_remote_url(year)
+    if url is None:
+        raise turso_config.TursoConfigError(
+            f"No Turso database configured for {year}. Set "
+            f"{turso_config.REMOTE_URL_PREFIX}{year} in {turso_config.env_file_path()} "
+            f"(see .env.example), or unset TURSO_* to run embedded."
+        )
+    return url
+
+
+def year_available(year: int) -> bool:
+    """Whether `year` has a database to read at all."""
+    if not appstate.is_remote_enabled():
+        return os.path.exists(appstate.get_db_path(year))
+    return turso_config.get_remote_url(year) is not None
+
+
+def _get_connection(replica_path: str, remote_url: str | None) -> _Connection:
+    key = (replica_path, remote_url)
+    with _conn_lock:
+        holder = _connections.get(key)
+        if holder is None:
+            holder = _Connection(
+                replica_path,
+                remote_url,
+                turso_config.get_auth_token() if remote_url else None,
+            )
+            _connections[key] = holder
+        return holder
+
+
+def pull_all_years(years: list[int] | None = None) -> None:
+    """Pull remote changes for every already-open replica."""
+    targets = years if years is not None else appstate.get_years()
+    with _conn_lock:
+        holders = list(_connections.values())
+    wanted = set(targets)
+    for holder in holders:
+        if holder.remote_url is None:
+            continue
+        year = _year_of_replica(holder.replica_path)
+        if wanted and year is not None and year not in wanted:
+            continue
+        holder.pull()
+
+
+def _year_of_replica(replica_path: str) -> int | None:
+    stem = os.path.splitext(os.path.basename(replica_path))[0]
+    prefix, _, tail = stem.rpartition("_")
+    if prefix == "jouduto" and tail.isdigit():
+        return int(tail)
+    return None
+
+
+def close_all_connections() -> None:
+    """Flush and close every cached replica (call on app shutdown)."""
+    with _conn_lock:
+        holders = list(_connections.values())
+        _connections.clear()
+    for holder in holders:
+        holder.close()
+
+
+# ---------------------------------------------------------------------------
+# Shared query helpers. Each takes its own short-lived transaction scope over a
+# cached connection, so callers never hand-write SQL or manage a context just
+# to fetch a common list. The active year comes from appstate (the same logic
+# the pages used inline), so these "just work" against whichever fiscal year is
+# selected.
 # ---------------------------------------------------------------------------
 
 def get_all_distributors() -> list[dict]:
@@ -133,10 +308,9 @@ def get_item_year_sales() -> dict[str, dict[int, int]]:
     """
     sales: dict[str, dict[int, int]] = {}
     for year in appstate.get_years():
-        db_path = appstate.get_db_path(year)
-        if not os.path.exists(db_path):
+        if not year_available(year):
             continue
-        with DatabaseManager(db_path) as db:
+        with DatabaseManager(year=year) as db:
             rows = db.fetch_all(
                 """
                 SELECT i.item_code, COALESCE(inv.quantity_sold, 0) AS sold
@@ -162,10 +336,9 @@ def get_item_history_by_code(item_code: str) -> list[dict]:
     for year in appstate.get_years():
         if year >= active_year:
             continue
-        db_path = appstate.get_db_path(year)
-        if not os.path.exists(db_path):
+        if not year_available(year):
             continue
-        with DatabaseManager(db_path) as db:
+        with DatabaseManager(year=year) as db:
             row = db.fetch_one(
                 """
                 SELECT i.item_code, i.item_name,
@@ -276,40 +449,80 @@ def migrate_po_statuses(db):
         DROP TABLE purchase_orders_legacy;
     """)
 
+
 class DatabaseManager:
-    def __init__(self, path: str | None = None):
-        self.path = path if path is not None else appstate.get_db_path()
-        self.conn: Optional[sqlite3.Connection] = None
-        self.cur: Optional[sqlite3.Cursor] = None
+    """Transaction scope over a cached Turso replica connection.
+
+    The connection is shared for the life of the session (opening a sync
+    connection costs a network round-trip), so `__enter__` just grabs a cursor
+    and `__exit__` ends the transaction: commit + push on success, rollback on
+    failure. Reads never touch the network.
+    """
+
+    def __init__(self, path: str | None = None, year: int | None = None):
+        self.year = year if year is not None else appstate.get_active_year()
+        self.path = path if path is not None else appstate.get_db_path(self.year)
+        self.remote_url: str | None = None
+        self._holder: _Connection | None = None
+        self.conn: Optional[turso.Connection] = None
+        self.cur: Optional[turso.Cursor] = None
+        self._dirty = False
 
     def __enter__(self):
-        self.conn = sqlite3.connect(self.path)
-        self.conn.row_factory = sqlite3.Row
+        self.remote_url = _remote_url_for(self.year)
+        self._holder = _get_connection(self.path, self.remote_url)
+        if not self._holder.pulled:
+            self._holder.pull()
+        self.conn = self._holder.conn
         self.cur = self.conn.cursor()
+        self._dirty = False
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.conn:
+        if self.conn is None:
+            return False
+        try:
             if exc_type is None:
-                self.conn.commit()
+                if self._dirty:
+                    self.conn.commit()
+                    if self._holder is not None:
+                        self._holder.push()
             else:
                 self.conn.rollback()
-
-            if self.cur:
+        finally:
+            if self.cur is not None:
                 self.cur.close()
-            self.conn.close()
+                self.cur = None
+            self.conn = None
+        return False
+
+    def commit_and_push(self) -> None:
+        """Commit the open transaction and replicate it immediately.
+
+        `__exit__` already does this once per `with` block; bulk tooling that
+        wants to checkpoint a long load (so a failure costs one table, not the
+        whole run) calls it in between.
+        """
+        if self.cur is None or self.conn is None:
+            raise Exception("Cursor not initialized")
+        self.conn.commit()
+        if self._holder is not None:
+            self._holder.push()
+        self._dirty = False
 
     def execute_query(self, query: str, params: Tuple[Any, ...] = ()) -> None:
 
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.execute(query, params)
+        self._dirty = True
 
     def execute_many_query(self, query: str, params: Tuple[Any, ...] = ()) -> None:
 
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.executemany(query, params)
+        self._dirty = True
 
 
     def execute_script(self, script: str) -> None:
@@ -317,6 +530,7 @@ class DatabaseManager:
         if self.cur is None:
             raise Exception("Cursor not initialized")
         self.cur.executescript(script)
+        self._dirty = True
 
     def fetch_all(self, query: str, params: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
 
@@ -333,20 +547,17 @@ class DatabaseManager:
         row = self.cur.fetchone()
         return dict(row) if row else None
 
-    def fetch_simple_one_item(self, item_code: str) -> Item | None: 
+    def fetch_simple_one_item(self, item_code: str) -> Item | None:
 
         if self.cur is None:
             raise Exception("Cursor not initialized")
 
         self.cur.execute("SELECT * FROM items WHERE items.item_code = ?", (item_code,))
         it = self.cur.fetchone()
-        if not it: 
+        if not it:
             return None
 
         self.cur.execute("SELECT * FROM inventory WHERE inventory.item_id = ?", (it["item_id"],))
         db_inv = self.cur.fetchone()
         inv = Inventory(db_inv["inventory_id"], db_inv["item_id"], db_inv["quantity_available"], db_inv["quantity_ordered"], db_inv["quantity_sold"]) if db_inv else None
         return Item(it["item_id"], it["item_code"], it["item_name"], inventory=inv)
-
-
-

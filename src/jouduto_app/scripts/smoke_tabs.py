@@ -66,21 +66,24 @@ BaseControl.page = property(lambda self: SHARED_PAGE)
 
 # ---------------------------------------------------------------------------
 # Temp DBs: distinct item counts per year to prove per-tab DB context.
+# Remote replication is disabled so the smoke runs purely embedded, with no
+# network and no Turso account.
 # ---------------------------------------------------------------------------
 TMPDIR = Path(tempfile.mkdtemp(prefix="jouduto_smoke_tabs_"))
 appstate.DATA_DIR = str(TMPDIR)
+appstate.set_remote_enabled(False)
 appstate.set_active_year(2026)
 for year in appstate.get_years():
-    with DatabaseManager(appstate.get_db_path(year)) as db:
+    with DatabaseManager(year=year) as db:
         db.execute_script(constants.INITIAL_DB_SCHEME)
         database.migrate_po_statuses(db)
 
 # 2026 -> 2 items, 2025 -> 3 items
 for code, name in [("A-1", "Alpha"), ("A-2", "Bravo")]:
-    with DatabaseManager(appstate.get_db_path(2026)) as db:
+    with DatabaseManager(year=2026) as db:
         db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (code, name))
 for code, name in [("B-1", "Charlie"), ("B-2", "Delta"), ("B-3", "Echo")]:
-    with DatabaseManager(appstate.get_db_path(2025)) as db:
+    with DatabaseManager(year=2025) as db:
         db.execute_query("INSERT INTO items (item_code, item_name) VALUES (?, ?)", (code, name))
 
 
@@ -144,6 +147,12 @@ def chip_labels(shell):
     ]
 
 
+def header_badge(shell):
+    """The year badge inside the shell's page header row."""
+    header = shell.content_area.content.controls[0]
+    return header.content.controls[-1].content
+
+
 def main():
     shell = build_shell()
 
@@ -189,10 +198,10 @@ def main():
     check("tab1 items preserved", top(shell, t1.id).stack[-1][2] is items1)
 
     # 6. Header year badge follows the active tab.
-    badge = shell.content_area.content.controls[0].controls[-1].content
+    badge = header_badge(shell)
     check("badge tab1 year", badge.value == "2026", badge.value)
     shell.switch_tab(t2.id)
-    badge = shell.content_area.content.controls[0].controls[-1].content
+    badge = header_badge(shell)
     check("badge tab2 year", badge.value == "2025", badge.value)
 
     # 7. global appstate year tracks the ACTIVE tab (DB context).

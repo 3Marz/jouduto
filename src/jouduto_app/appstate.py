@@ -5,9 +5,15 @@ import flet as ft
 
 FIRST_YEAR = 2023
 DATA_DIR = "data"
+# Cloud-backed years live in their own directory: a Turso replica must start
+# absent-or-empty so the SDK can bootstrap it from the remote, and the original
+# local jouduto_{year}.db files stay put as backups.
+REPLICA_SUBDIR = "replicas"
 DB_TEMPLATE = "jouduto_{year}.db"
 
 _active_year: int = datetime.now().year
+_sync_error: str = ""
+_remote_enabled: bool = True
 
 
 def get_active_year() -> int:
@@ -24,8 +30,53 @@ def get_years() -> list[int]:
 
 
 def get_db_path(year: int | None = None) -> str:
+    """Local replica file for `year`.
+
+    This is a *cache*: the remote Turso database is the source of truth and
+    the file is populated by `turso.sync.connect(..., bootstrap_if_empty=True)`.
+    """
     target = year if year is not None else _active_year
-    return os.path.join(DATA_DIR, DB_TEMPLATE.format(year=target))
+    return os.path.join(DATA_DIR, REPLICA_SUBDIR, DB_TEMPLATE.format(year=target))
+
+
+# Backwards-compatible alias: the replica is still a per-year SQLite file, the
+# only difference is which directory it lives in.
+get_replica_path = get_db_path
+
+
+def set_sync_error(message: str) -> None:
+    """Record a replication failure so the UI can surface it (fail loudly)."""
+    global _sync_error
+    _sync_error = message
+
+
+def get_sync_error() -> str:
+    return _sync_error
+
+
+def clear_sync_error_if(prefix: str) -> None:
+    """Drop a recorded sync error only when it belongs to `prefix`.
+
+    Several years replicate independently, so a successful push for one year
+    must not hide a still-broken one.
+    """
+    global _sync_error
+    if _sync_error.startswith(f"{prefix}: "):
+        _sync_error = ""
+
+
+def set_remote_enabled(enabled: bool) -> None:
+    """Turn cloud replication on/off for the whole process.
+
+    The headless scripts (seed, smoke tests) flip this off so they work against
+    a plain local embedded database with no network at all.
+    """
+    global _remote_enabled
+    _remote_enabled = enabled
+
+
+def is_remote_enabled() -> bool:
+    return _remote_enabled
 
 
 # A distinct theme color per fiscal year so the active year is visible

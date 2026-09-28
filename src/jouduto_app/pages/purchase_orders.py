@@ -1,7 +1,6 @@
-import sqlite3
 from typing import Tuple
 
-from database import DatabaseManager, get_all_items
+from database import DatabaseManager, DBError, get_all_items
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -265,7 +264,7 @@ class POPage(ft.Container):
             ], tight=True, width=840, height=520),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog()),
-                ft.ElevatedButton("Save PO", on_click=self.save_po),
+                ft.FilledButton("Save PO", on_click=self.save_po),
             ]
         )
 

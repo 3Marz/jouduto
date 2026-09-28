@@ -108,8 +108,8 @@ def calculate_order(
     qty = max(qty, minimum_order_qty)
     qty = math.ceil(qty / order_multiple) * order_multiple
 
-    if qty > 30:
-        qty = round_to_nearest_5(qty)
+    # if qty > 30:
+    #     qty = round_to_nearest_5(qty)
 
     return {
         "should_order": True,

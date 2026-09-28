@@ -8,6 +8,8 @@ dependencies = [
     "flet",
     "flet-datatable2",
     "pandas",
-    "pyperclip"
+    "pyperclip",
+    "pyturso",
+    "python-dotenv"
 ]
 

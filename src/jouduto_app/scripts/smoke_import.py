@@ -57,12 +57,14 @@ BaseControl.page = property(lambda self: SHARED_PAGE)
 
 
 # ---------------------------------------------------------------------------
-# Temp DB setup.
+# Temp DB setup. Remote replication is disabled so the smoke runs purely
+# embedded against throwaway files, with no network and no Turso account.
 # ---------------------------------------------------------------------------
 TMPDIR = Path(tempfile.mkdtemp(prefix="jouduto_smoke_import_"))
 appstate.DATA_DIR = str(TMPDIR)
+appstate.set_remote_enabled(False)
 appstate.set_active_year(2026)
-with DatabaseManager(appstate.get_db_path()) as db:
+with DatabaseManager(year=2026) as db:
     db.execute_script(constants.INITIAL_DB_SCHEME)
     database.migrate_po_statuses(db)
 

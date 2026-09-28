@@ -1,7 +1,5 @@
 
-import sqlite3
-
-from database import DatabaseManager
+from database import DatabaseManager, DBError
 from datatypes import Item
 
 from components.dialogs import confirm_delete
@@ -395,7 +393,7 @@ class ItemDetailsPage(ft.Container):
                         "VALUES (?, ?, TRUE)",
                         (item_id, int(distributor_value)),
                     )
-        except sqlite3.Error as err:
+        except DBError as err:
             self.new_item_status.value = f"Error: {err}"
             self.new_item_status.color = ft.Colors.ERROR
             self.new_item_status.update()
@@ -610,7 +608,7 @@ class ItemDetailsPage(ft.Container):
             self.save_status.value = "Saved"
             self.save_status.color = ft.Colors.GREEN
             self.save_status.update()
-        except sqlite3.Error as err:
+        except DBError as err:
             self.save_status.value = f"Error: {err}"
             self.save_status.color = ft.Colors.ERROR
             self.save_status.update()
@@ -655,7 +653,7 @@ class ItemDetailsPage(ft.Container):
                 )
             self.save_status.value = "Item deleted"
             self.save_status.color = ft.Colors.GREEN
-        except sqlite3.Error as err:
+        except DBError as err:
             self.save_status.value = f"Error deleting item: {err}"
             self.save_status.color = ft.Colors.ERROR
             self.save_status.update()
