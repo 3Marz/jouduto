@@ -148,6 +148,29 @@ def _get_connection(replica_path: str, remote_url: str | None) -> _Connection:
         return holder
 
 
+def will_hit_network(year: int | None = None) -> bool:
+    """Whether the next database use for `year` will cross the network.
+
+    Opening a sync connection bootstraps from the remote and the first use also
+    pulls, so a cold fiscal year means a visible wait. Once a replica is open
+    and pulled, reads are answered locally, and the UI should not claim to be
+    loading -- this is what keeps the overlay from flashing on every keystroke.
+    Writes are not covered: they always push, so their handlers pass
+    `force=True` to `loader.cloud_loading`.
+    """
+    if not appstate.is_remote_enabled():
+        return False
+
+    target = year if year is not None else appstate.get_active_year()
+    with _conn_lock:
+        for (replica_path, remote_url), holder in _connections.items():
+            if remote_url is None:
+                continue
+            if _year_of_replica(replica_path) == target:
+                return not holder.pulled
+    return True
+
+
 def pull_all_years(years: list[int] | None = None) -> None:
     """Pull remote changes for every already-open replica."""
     targets = years if years is not None else appstate.get_years()

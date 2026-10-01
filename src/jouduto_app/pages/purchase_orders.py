@@ -1,6 +1,7 @@
 from typing import Tuple
 
 from database import DatabaseManager, DBError, get_all_items
+from components.loader import cloud_loading
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -496,6 +497,7 @@ class POPage(ft.Container):
             self.paste_status.color = ft.Colors.ERROR
         self.create_po_modal.update()
 
+    @cloud_loading("Adding items to the order…", force=True)
     def add_pasted_items(self, e):
         rows, problems = parse_pasted_rows(self.paste_field.value or "")
 
@@ -629,6 +631,7 @@ class POPage(ft.Container):
         self.item_search.update()
         await self.item_search.close_view(self.item_search.value)
 
+    @cloud_loading("Saving to the cloud database…", force=True)
     def save_po(self, e):
         if not self.po_number_field.value or not self.distributor_dropdown.value:
             return

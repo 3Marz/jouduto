@@ -2,6 +2,7 @@
 import asyncio
 
 from database import DatabaseManager, DBError, get_item_history_by_code
+from components.loader import cloud_loading
 
 import flet as ft
 import flet_datatable2 as fdt
@@ -595,6 +596,7 @@ class ItemsPage(ft.Container):
         self.loaded_text.update()
         self.load_more_button.update()
 
+    @cloud_loading("Deleting all items…", force=True)
     def delete_all_items(self, e: ft.Event[ft.Button] = None):
         # TODO Delete all related tables with items delete
         with DatabaseManager() as db:
@@ -620,6 +622,7 @@ class ItemsPage(ft.Container):
     def handle_import_type_change(self, e: ft.Event[ft.RadioGroup]):
         self.selected_import_type = e.control.value
 
+    @cloud_loading("Importing to the cloud database…", force=True)
     def handle_import(self, e: ft.Event[ft.Button]):
         if not self.files:
             return

@@ -25,6 +25,8 @@ import flet as ft
 import appstate
 import database
 
+from components.loader import LoadingOverlay, set_active_overlay
+
 
 class Tab:
     """One browser tab: its own fiscal year + navigation stack."""
@@ -130,12 +132,28 @@ class AppShell:
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
         )
         self.content_area = ft.Container(expand=True, padding=0)
+        # Cloud round-trips can take seconds, so the whole window is wrapped in
+        # a Stack with the loading overlay on top of it.
+        self.loading_overlay = LoadingOverlay(page)
+        set_active_overlay(self.loading_overlay)
         self.root_view = ft.View(
             route="/",
             controls=[
-                self.strip,
-                ft.Divider(height=1),
-                ft.SafeArea(expand=True, content=self.content_area),
+                ft.Stack(
+                    expand=True,
+                    controls=[
+                        ft.Column(
+                            expand=True,
+                            spacing=0,
+                            controls=[
+                                self.strip,
+                                ft.Divider(height=1),
+                                ft.SafeArea(expand=True, content=self.content_area),
+                            ],
+                        ),
+                        self.loading_overlay,
+                    ],
+                )
             ],
         )
 

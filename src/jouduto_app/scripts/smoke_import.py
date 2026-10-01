@@ -22,6 +22,7 @@ import appstate
 import constants
 import database
 from database import DatabaseManager
+from components.loader import run_handler
 import pages.items as items_module
 
 from flet.controls.base_control import BaseControl
@@ -100,7 +101,7 @@ def main():
         }
     )  # itertuples: row[1]=code, row[2]=name, row[3]=dist
     page = page_for_next_import(frame, "items")
-    page.handle_import(None)
+    run_handler(page.handle_import, None)
 
     check("items status", page.import_status.value == "Items imported: 2, errors: 1",
           page.import_status.value)
@@ -130,7 +131,7 @@ def main():
         index=[1, 2, 3],
     )  # row[1]=code, row[7]=available; row[0]!=0 so all rows processed
     page = page_for_next_import(frame, "avil_stock")
-    page.handle_import(None)
+    run_handler(page.handle_import, None)
 
     check("avail status", page.import_status.value == "Available stock updated: 2, skipped: 1",
           page.import_status.value)
@@ -156,7 +157,7 @@ def main():
         index=[1],
     )
     page = page_for_next_import(frame, "avil_stock")
-    page.handle_import(None)
+    run_handler(page.handle_import, None)
     with DatabaseManager() as db:
         val = db.fetch_one(
             "SELECT inv.quantity_available FROM inventory inv JOIN items i ON i.item_id = inv.item_id "
@@ -173,7 +174,7 @@ def main():
         index=[1, 2, 3],
     )  # row[1]=code, row[11]=sold
     page = page_for_next_import(frame, "sold_stock")
-    page.handle_import(None)
+    run_handler(page.handle_import, None)
 
     check("sold status", page.import_status.value == "Sold stock updated: 1, skipped: 2",
           page.import_status.value)

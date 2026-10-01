@@ -1,6 +1,7 @@
 import flet as ft
 
 from appstate import get_active_year, get_years, get_sync_error
+from components.loader import cloud_loading
 from database import get_dashboard_stats
 
 
@@ -222,10 +223,15 @@ class HomePage(ft.Container):
         )
 
     def _nav(self, route: str):
+        # Building the target page reads from the database, which bootstraps
+        # and pulls the first time a fiscal year is opened -- so this can be a
+        # slow, cloud-bound action even though it is just a click.
+        @cloud_loading("Loading…")
         def handler(e):
             self.on_navigate(route)
         return handler
 
+    @cloud_loading("Loading the selected year from the cloud…", force=True)
     def handle_year_change(self, e: ft.Event[ft.Dropdown]):
         try:
             year = int(e.control.value)

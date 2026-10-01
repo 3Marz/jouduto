@@ -1,6 +1,7 @@
 
 from database import DatabaseManager, DBError
 from datatypes import Item
+from components.loader import cloud_loading
 
 from components.dialogs import confirm_delete
 from components.dropdowns import DistributorDropdown
@@ -365,6 +366,7 @@ class ItemDetailsPage(ft.Container):
         )
         self.po_placeholder.visible = not pos
 
+    @cloud_loading("Creating item…", force=True)
     def handle_create_item(self, e: ft.Event[ft.Control]):
         code = (self.new_item_code_field.value or "").strip()
         name = (self.new_item_name_field.value or "").strip()
@@ -506,6 +508,7 @@ class ItemDetailsPage(ft.Container):
         self.rebuild_tags_ui()
         self.tags_wrap.update()
 
+    @cloud_loading("Saving item to the cloud database…", force=True)
     def handle_save(self, e: ft.Event[ft.Button]):
         if self.selected_item_id is None:
             return
@@ -619,6 +622,7 @@ class ItemDetailsPage(ft.Container):
         self.about_to_delete_item_id = self.selected_item_id
         self.page.show_dialog(self.confirm_delete_dialog)
 
+    @cloud_loading("Deleting item…", force=True)
     def handle_delete_item(self, e: ft.Event[ft.Button] = None):
         if self.about_to_delete_item_id is None:
             return

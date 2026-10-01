@@ -1,6 +1,7 @@
 
 from database import DatabaseManager, DBError, get_all_distributors
 from components.dialogs import confirm_delete
+from components.loader import cloud_loading
 import flet as ft
 
 @ft.control
@@ -68,6 +69,7 @@ class DistributorsPage(ft.Container):
     def handle_create_name_change(self, e: ft.Event[ft.TextField]):
         self.create_distributor_name = e.control.value
 
+    @cloud_loading("Creating distributor…", force=True)
     def handle_create(self):
         if not self.create_distributor_name: return
 
@@ -90,6 +92,7 @@ class DistributorsPage(ft.Container):
 
         self.refresh_distributors_list()
 
+    @cloud_loading("Deleting distributor…", force=True)
     def handle_delete(self, e: ft.Event[ft.Button]):
         if self.about_to_delete_id is None: return
 
